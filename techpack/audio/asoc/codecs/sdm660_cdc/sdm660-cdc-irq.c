@@ -32,11 +32,7 @@
 
 #define MAX_NUM_IRQS 14
 #define NUM_IRQ_REGS 2
-#ifndef VENDOR_EDIT
 #define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 700
-#else
-#define WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS 2000
-#endif /* VENDOR_EDIT */
 
 #define BYTE_BIT_MASK(nr) (1UL << ((nr) % BITS_PER_BYTE))
 #define BIT_BYTE(nr) ((nr) / BITS_PER_BYTE)
@@ -183,21 +179,14 @@ static int get_irq_bit(int linux_irq)
 	return i;
 }
 
-#ifndef VENDOR_EDIT
 static int get_order_irq(int  i)
 {
 	return order[i];
 }
-#endif /* VENDOR_EDIT */
 
 static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 {
-#ifndef VENDOR_EDIT
 	int irq, i, j;
-#else /* VENDOR_EDIT */
-	int irq = 0;
-	int i = 0;
-#endif /* VENDOR_EDIT */
 	unsigned long status[NUM_IRQ_REGS] = {0};
 
 	if (unlikely(wcd9xxx_spmi_lock_sleep() == false)) {
@@ -216,7 +205,6 @@ static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 			MSM89XX_PMIC_DIGITAL_INT_LATCHED_STS);
 		status[i] &= ~map.mask[i];
 	}
-#ifndef VENDOR_EDIT
 	for (i = 0; i < MAX_NUM_IRQS; i++) {
 		j = get_order_irq(i);
 		if ((status[BIT_BYTE(j)] & BYTE_BIT_MASK(j)) &&
@@ -227,9 +215,6 @@ static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 					BYTE_BIT_MASK(j);
 		}
 	}
-#else /* VENDOR_EDIT */
-	map.handler[irq](irq, data);
-#endif /* VENDOR_EDIT */
 	map.handled[BIT_BYTE(irq)] &= ~BYTE_BIT_MASK(irq);
 	wcd9xxx_spmi_unlock_sleep();
 

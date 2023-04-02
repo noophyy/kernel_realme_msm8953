@@ -58,11 +58,7 @@
 #define SPK_PMD 2
 #define SPK_PMU 3
 
-#ifndef ODM_WT_EDIT
 #define MICBIAS_DEFAULT_VAL 1800000
-#else /* ODM_WT_EDIT */
-#define MICBIAS_DEFAULT_VAL 2700000
-#endif /* ODM_WT_EDIT */
 #define MICBIAS_MIN_VAL 1600000
 #define MICBIAS_STEP_SIZE 50000
 
@@ -492,9 +488,6 @@ static int msm_anlg_cdc_mbhc_map_btn_code_to_num(struct snd_soc_codec *codec)
 		btn = -EINVAL;
 		break;
 	};
-#ifdef VENDOR_EDIT
-	pr_info("%s: btn is %d", __func__, btn);
-#endif /* VENDOR_EDIT */
 
 	return btn;
 }
@@ -2705,9 +2698,6 @@ static void wcd_imped_config(struct snd_soc_codec *codec,
 
 	value = wcd_get_impedance_value(imped);
 
-	#if defined(ODM_WT_EDIT) && defined(WT_COMPILE_FACTORY_VERSION)
-	value = 4;
-	#endif  /* ODM_WT_EDIT */
 	if (value < wcd_imped_val[0]) {
 		dev_dbg(codec->dev,
 			"%s, detected impedance is less than 4 Ohm\n",
@@ -2861,9 +2851,6 @@ static int msm_anlg_cdc_lo_dac_event(struct snd_soc_dapm_widget *w,
 			MSM89XX_PMIC_ANALOG_RX_LO_DAC_CTL, 0x08, 0x08);
 		snd_soc_update_bits(codec,
 			MSM89XX_PMIC_ANALOG_RX_LO_DAC_CTL, 0x40, 0x40);
-		#ifdef ODM_WT_EDIT
-		msleep(5);
-		#endif
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec,
@@ -3043,9 +3030,6 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"Ext Spk", NULL, "Ext Spk Switch"},
 	{"Ext Spk Switch", "On", "HPHL PA"},
 	{"Ext Spk Switch", "On", "HPHR PA"},
-	#ifdef ODM_WT_EDIT
-	{"Ext Spk Switch", "On", "LINEOUT"},
-	#endif /* ODM_WT_EDIT */
 
 	{"HPHL PA", NULL, "HPHL"},
 	{"HPHR PA", NULL, "HPHR"},
@@ -4001,6 +3985,12 @@ static ssize_t msm_anlg_codec_version_read(struct snd_info_entry *entry,
 
 	switch (get_codec_version(sdm660_cdc_priv)) {
 	case DRAX_CDC:
+	case DIANGU:
+	case CAJON_2_0:
+	case CAJON:
+	case CONGA:
+	case TOMBAK_2_0:
+	case TOMBAK_1_0:
 		len = snprintf(buffer, sizeof(buffer), "DRAX-CDC_1_0\n");
 		break;
 	default:
@@ -4038,8 +4028,8 @@ int msm_anlg_codec_info_create_codec_entry(struct snd_info_entry *codec_root,
 	sdm660_cdc_priv = snd_soc_codec_get_drvdata(codec);
 	card = codec->component.card;
 	sdm660_cdc_priv->entry = snd_info_create_subdir(codec_root->module,
-							     "spmi0-03",
-							     codec_root);
+							    sdm660_cdc_priv->pmic_analog,
+							    codec_root);
 	if (!sdm660_cdc_priv->entry) {
 		dev_dbg(codec->dev, "%s: failed to create pmic_analog entry\n",
 			__func__);
@@ -4208,9 +4198,6 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Playback");
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Capture");
 
-	#ifdef ODM_WT_EDIT
-	snd_soc_dapm_ignore_suspend(dapm, "Ext Spk");
-	#endif
 	snd_soc_dapm_sync(dapm);
 
 	return 0;
@@ -4590,7 +4577,7 @@ static int msm_anlg_cdc_probe(struct platform_device *pdev)
 	struct sdm660_cdc_priv *sdm660_cdc = NULL;
 	struct sdm660_cdc_pdata *pdata;
 	int adsp_state;
-
+	const char *parent_dev = NULL;
 	adsp_state = apr_get_subsys_state();
 	if (adsp_state == APR_SUBSYS_DOWN ||
 		!q6core_is_adsp_ready()) {
@@ -4672,7 +4659,12 @@ static int msm_anlg_cdc_probe(struct platform_device *pdev)
 	INIT_WORK(&sdm660_cdc->msm_anlg_add_child_devices_work,
 		  msm_anlg_add_child_devices);
 	schedule_work(&sdm660_cdc->msm_anlg_add_child_devices_work);
-
+	parent_dev = pdev->dev.parent->of_node->full_name;
+	if (parent_dev) {
+		snprintf(sdm660_cdc->pmic_analog, PMIC_ANOLOG_SIZE, "spmi0-0%s",
+			 parent_dev + strlen(parent_dev)-1);
+		parent_dev = NULL;
+	}
 	return ret;
 err_supplies:
 	msm_anlg_cdc_disable_supplies(sdm660_cdc, pdata);

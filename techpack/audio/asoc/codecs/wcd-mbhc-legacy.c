@@ -121,7 +121,6 @@ exit:
 }
 
 /* To determine if cross connection occurred */
-#ifndef VENDOR_EDIT
 static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 {
 	u16 swap_res = 0;
@@ -175,7 +174,6 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	return (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) ? true : false;
 }
 
-#endif /*VENDOR_EDIT*/
 static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
@@ -319,11 +317,7 @@ static void wcd_enable_mbhc_supply(struct wcd_mbhc *mbhc,
 				wcd_enable_curr_micbias(mbhc,
 						WCD_MBHC_EN_PULLUP);
 			} else {
-			#ifndef VENDOR_EDIT
 				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-			#else /* VENDOR_EDIT */
-				wcd_enable_curr_micbias(mbhc,WCD_MBHC_EN_MB);
-			#endif /* VENDOR_EDIT */
 			}
 		} else if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
@@ -416,10 +410,6 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 	struct snd_soc_codec *codec = mbhc->codec;
 	bool micbias1 = false;
 
-	#ifdef VENDOR_EDIT
-	#undef pr_debug
-	#define pr_debug pr_info
-	#endif /* VENDOR_EDIT */
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
@@ -437,11 +427,7 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 		mbhc->mbhc_cb->mbhc_micbias_control(codec, MIC_BIAS_2,
 						    MICB_ENABLE);
 	else
-		#ifndef VENDOR_EDIT
 		wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-		#else /* VENDOR_EDIT */
-		wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-		#endif /* VENDOR_EDIT */
 
 	/* Re-initialize button press completion object */
 	reinit_completion(&mbhc->btn_press_compl);
@@ -457,26 +443,16 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	unsigned long timeout;
 	u16 hs_comp_res = 0, hphl_sch = 0, mic_sch = 0, btn_result = 0;
 	bool wrk_complete = false;
-	#ifndef VENDOR_EDIT
 	int pt_gnd_mic_swap_cnt = 0;
 	int no_gnd_mic_swap_cnt = 0;
-	#endif /* VENDOR_EDIT */
 	bool is_pa_on = false, spl_hs = false, spl_hs_reported = false;
 	bool micbias2 = false;
 	bool micbias1 = false;
-	#ifndef VENDOR_EDIT
 	int ret = 0;
-	#endif /* VENDOR_EDIT */
 	int rc, spl_hs_count = 0;
-	#ifndef VENDOR_EDIT
 	int cross_conn;
 	int try = 0;
 
-	#endif /* VENDOR_EDIT */
-	#ifdef VENDOR_EDIT
-	#undef pr_debug
-	#define pr_debug pr_info
-	#endif /* VENDOR_EDIT */
 	pr_debug("%s: enter\n", __func__);
 
 	mbhc = container_of(work, struct wcd_mbhc, correct_plug_swch);
@@ -490,11 +466,7 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	 * no need to enabale micbias/pullup here
 	 */
 
-    #ifndef VENDOR_EDIT
 	wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-	#else /* VENDOR_EDIT */
-	wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-    #endif /* VENDOR_EDIT */
 
 	/* Enable HW FSM */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 1);
@@ -523,16 +495,10 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 			plug_type = MBHC_PLUG_TYPE_INVALID;
 	}
 
-	#ifndef VENDOR_EDIT
 	do {
 		cross_conn = wcd_check_cross_conn(mbhc);
 		try++;
 	} while (try < mbhc->swap_thr);
-
-	#ifdef ODM_WT_EDIT
-	printk("%s: hs_comp %d, plug_type %d\n", __func__, hs_comp_res,
-			((cross_conn > 0) ? MBHC_PLUG_TYPE_GND_MIC_SWAP : plug_type));
-	#endif /* ODM_RH_EDIT */
 
 	/*
 	 * Check for cross connection 4 times.
@@ -547,8 +513,6 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		goto correct_plug_type;
 	}
 
-	#endif /* VENDOR_EDIT */
-	#ifndef VENDOR_EDIT
 	if ((plug_type == MBHC_PLUG_TYPE_HEADSET ||
 	     plug_type == MBHC_PLUG_TYPE_HEADPHONE) &&
 	    (!wcd_swch_level_remove(mbhc))) {
@@ -559,28 +523,6 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		wcd_mbhc_find_plug_and_report(mbhc, plug_type);
 		WCD_MBHC_RSC_UNLOCK(mbhc);
 	}
-    #else /* VENDOR_EDIT */
-	if ((plug_type == MBHC_PLUG_TYPE_HEADSET)
-				&& (!wcd_swch_level_remove(mbhc))) {
-			WCD_MBHC_RSC_LOCK(mbhc);
-			wcd_mbhc_find_plug_and_report(mbhc, plug_type);
-			WCD_MBHC_RSC_UNLOCK(mbhc);
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-			pr_err("%s: headset report\n", __func__);
-			goto correct_plug_type;
-		} else if ((plug_type == MBHC_PLUG_TYPE_HEADPHONE)
-				&& (!wcd_swch_level_remove(mbhc))) {
-			WCD_MBHC_RSC_LOCK(mbhc);
-			wcd_mbhc_find_plug_and_report(mbhc, plug_type);
-			WCD_MBHC_RSC_UNLOCK(mbhc);
-			pr_err("%s: headphone report\n", __func__);
-			goto correct_plug_type;
-		} else if ((plug_type == MBHC_PLUG_TYPE_HIGH_HPH)
-				&& (!wcd_swch_level_remove(mbhc))) {
-			pr_err("%s: type_high report\n", __func__);
-			goto correct_plug_type;
-		}
-	#endif /* VENDOR_EDIT */
 
 correct_plug_type:
 
@@ -633,9 +575,6 @@ correct_plug_type:
 		pr_debug("%s: hs_comp_res: %x\n", __func__, hs_comp_res);
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(codec);
-		#ifdef VENDOR_EDIT
-		pr_err("%s: hs_comp_res: %x is_pa_on: %x\n", __func__, hs_comp_res, is_pa_on);
-        #endif /* VENDOR_EDIT */
 
 		/*
 		 * instead of hogging system by contineous polling, wait for
@@ -653,7 +592,6 @@ correct_plug_type:
 			}
 		}
 
-#ifndef VENDOR_EDIT
 		if ((!hs_comp_res) && (!is_pa_on)) {
 			/* Check for cross connection*/
 			ret = wcd_check_cross_conn(mbhc);
@@ -706,8 +644,7 @@ correct_plug_type:
 			}
 		}
 
-#endif /* VENDOR_EDIT */
-                WCD_MBHC_REG_READ(WCD_MBHC_HPHL_SCHMT_RESULT, hphl_sch);
+		WCD_MBHC_REG_READ(WCD_MBHC_HPHL_SCHMT_RESULT, hphl_sch);
 		WCD_MBHC_REG_READ(WCD_MBHC_MIC_SCHMT_RESULT, mic_sch);
 		if (hs_comp_res && !(hphl_sch || mic_sch)) {
 			pr_debug("%s: cable is extension cable\n", __func__);
@@ -750,11 +687,6 @@ correct_plug_type:
 			wrk_complete = false;
 		}
 	}
-
-	#ifdef ODM_WT_EDIT
-	printk("%s: after 3s wrk_complete %d, plug_type %d\n", __func__, wrk_complete, plug_type);
-	#endif /* ODM_RH_EDIT */
-
 	if (!wrk_complete && mbhc->btn_press_intr) {
 		pr_debug("%s: Can be slow insertion of headphone\n", __func__);
 		wcd_cancel_btn_work(mbhc);
@@ -772,11 +704,7 @@ correct_plug_type:
 	    (plug_type == MBHC_PLUG_TYPE_ANC_HEADPHONE))) {
 		pr_debug("%s: plug_type:0x%x already reported\n",
 			 __func__, mbhc->current_plug);
-		#ifndef VENDOR_EDIT
 		goto enable_supply;
-		#else /* VENDOR_EDIT */
-		goto report;
-		#endif /* VENDOR_EDIT */
 	}
 
 	if (plug_type == MBHC_PLUG_TYPE_HIGH_HPH &&
@@ -799,42 +727,13 @@ report:
 		wcd_cancel_btn_work(mbhc);
 		plug_type = MBHC_PLUG_TYPE_HEADPHONE;
 	}
-	#ifndef ODM_WT_EDIT
 	pr_debug("%s: Valid plug found, plug type %d wrk_cmpt %d btn_intr %d\n",
 			__func__, plug_type, wrk_complete,
 			mbhc->btn_press_intr);
-	#else /* ODM_RH_EDIT */
-	printk("%s: Valid plug found, plug type %d wrk_cmpt %d btn_intr %d\n",
-		__func__, plug_type, wrk_complete,
-		mbhc->btn_press_intr);
-	#endif /* ODM_RH_EDIT */
-
 	WCD_MBHC_RSC_LOCK(mbhc);
-	#ifdef VENDOR_EDIT
-	/* Add for report HEADPHONE remove event */
-	if ((mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
-		&& (plug_type == MBHC_PLUG_TYPE_HIGH_HPH)) {
-		if (!wcd_swch_level_remove(mbhc)) {
-			pr_info("%s: report remove SND_JACK_HEADPHONE\n", __func__);
-			wcd_mbhc_report_plug(mbhc, 0, SND_JACK_HEADPHONE);
-		}
-	}
-	#endif /* VENDOR_EDIT */
-	#ifndef VENDOR_EDIT
 	wcd_mbhc_find_plug_and_report(mbhc, plug_type);
-	#else /* VENDOR_EDIT */
-	if(mbhc->current_plug != plug_type) {
-		if (!wcd_swch_level_remove(mbhc) && mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET ) {
-			pr_info("%s: report remove SND_JACK_HEADSET\n", __func__);
-			wcd_mbhc_report_plug(mbhc, 0, SND_JACK_HEADSET);
-		}
-	    wcd_mbhc_find_plug_and_report(mbhc, plug_type);
-	}
-	#endif /* VENDOR_EDIT */
 	WCD_MBHC_RSC_UNLOCK(mbhc);
-#ifndef VENDOR_EDIT
 enable_supply:
-#endif /* VENDOR_EDIT */
 	if (mbhc->mbhc_cb->mbhc_micbias_control)
 		wcd_mbhc_update_fsm_source(mbhc, plug_type);
 	else
