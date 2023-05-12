@@ -73,8 +73,10 @@ obj-$(CONFIG_TOUCHSCREEN_STMPE)		+= stmpe-ts.o
 obj-$(CONFIG_TOUCHSCREEN_SUN4I)		+= sun4i-ts.o
 obj-$(CONFIG_TOUCHSCREEN_SUR40)		+= sur40.o
 obj-$(CONFIG_TOUCHSCREEN_SURFACE3_SPI)	+= surface3_spi.o
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX) += synaptics_dsx/
-obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v26)	+= synaptics_dsx_2.6/
+ifeq ($(ODM_WT_EDIT),yes)
+#obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX) += synaptics_dsx/
+#obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v26)	+= synaptics_dsx_2.6/
+endif
 obj-$(CONFIG_TOUCHSCREEN_TI_AM335X_TSC)	+= ti_am335x_tsc.o
 obj-$(CONFIG_TOUCHSCREEN_TOUCHIT213)	+= touchit213.o
 obj-$(CONFIG_TOUCHSCREEN_TOUCHRIGHT)	+= touchright.o
@@ -106,4 +108,11 @@ obj-$(CONFIG_TOUCHSCREEN_ROHM_BU21023)	+= rohm_bu21023.o
 obj-$(CONFIG_TOUCHSCREEN_FTS)		+= focaltech_touch/
 obj-$(CONFIG_TOUCHSCREEN_GT9XX_v28)		+= gt9xx_v2.8/
 obj-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET)	+= hxchipset/
+ifeq ($(ODM_WT_EDIT),yes)
+obj-$(CONFIG_INPUT_TOUCHSCREEN)      += headset_notifier.o
+obj-$(CONFIG_INPUT_TOUCHSCREEN)      += update_tpfw_notifier.o
+obj-$(CONFIG_TOUCHSCREEN_ILI9881)	+= ili9881_18663/
+obj-$(CONFIG_INPUT_TOUCHSCREEN_NT36525)	+= nt36525_18663/
+obj-$(CONFIG_TOUCHSCREEN_HIMAX_IC_HX83102) += himax_hx83102d/
+endif
 obj-$(CONFIG_TOUCHSCREEN_EKTF3XXX_CHIPSET) += ektf3xxx/
