@@ -41,7 +41,9 @@
 #include <linux/timer.h>
 
 #include "peripheral-loader.h"
-
+#ifdef ODM_WT_EDIT
+#include <linux/wt_system_monitor.h>
+#endif /* ODM_WT_EDIT */
 #define DISABLE_SSR 0x9889deed
 /* If set to 0x9889deed, call to subsystem_restart_dev() returns immediately */
 static uint disable_restart_work;
@@ -1190,6 +1192,22 @@ static void device_restart_work_hdlr(struct work_struct *work)
 							dev->desc->name);
 }
 
+#ifdef VENDOR_EDIT //yixue.ge add for modem subsystem crash 
+int subsystem_restart_dev_level(struct subsys_device *dev,int restart_level)
+{
+	int rc = 0; 
+	int restart_level_bak = dev->restart_level;
+	if(restart_level >= 0)
+		dev->restart_level = restart_level;
+	
+	rc = subsystem_restart_dev(dev);
+
+	dev->restart_level = restart_level_bak;
+	return rc;
+}
+
+#endif
+
 int subsystem_restart_dev(struct subsys_device *dev)
 {
 	const char *name;
@@ -1204,6 +1222,33 @@ int subsystem_restart_dev(struct subsys_device *dev)
 
 	name = dev->desc->name;
 
+#ifdef ODM_WT_EDIT
+#ifdef WT_BOOT_REASON
+	if (dev->restart_level == RESET_SOC) {
+		if (!strcmp(name,"wcnss"))
+			set_reset_magic(RESET_MAGIC_WCNSS);
+		else if (!strcmp(name,"modem"))
+			set_reset_magic(RESET_MAGIC_MODEM);
+		else if (!strcmp(name,"adsp"))
+			set_reset_magic(RESET_MAGIC_ADSP);
+		else if (!strcmp(name,"venus"))
+			set_reset_magic(RESET_MAGIC_VENUS);
+		else if (!strcmp(name,"a506_zap"))
+			set_reset_magic(RESET_MAGIC_A5XX_ZAP);
+		else if (!strcmp(name,"ipa_fws"))
+			set_reset_magic(RESET_MAGIC_IPA_FWS);
+		else if (!strcmp(name,"spss"))
+			set_reset_magic(RESET_MAGIC_SPSS);
+		else if (!strcmp(name,"a540_zap"))
+			set_reset_magic(RESET_MAGIC_A5XX_ZAP);
+		else if (!strcmp(name,"slpi"))
+			set_reset_magic(RESET_MAGIC_SLPI);
+		else
+			set_reset_magic(RESET_MAGIC_SUBSYSTEM);
+		save_panic_key_log("%s subsystem failure reason: %s.\n", name, subsys_restart_reason);
+	}
+#endif
+#endif /* ODM_WT_EDIT */
 	/*
 	 * If a system reboot/shutdown is underway, ignore subsystem errors.
 	 * However, print a message so that we know that a subsystem behaved
@@ -1741,9 +1786,24 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 	subsys->dev.bus = &subsys_bus_type;
 	subsys->dev.release = subsys_device_release;
 	subsys->notif_state = -1;
+#ifdef VENDOR_EDIT
+	#ifndef CONFIG_OPPO_DAILY_BUILD
+		#ifndef CONFIG_OPPO_SPECIAL_BUILD
+		subsys->restart_level = RESET_SUBSYS_COUPLED;
+		#endif
+	#endif
+#endif
 	subsys->desc->sysmon_pid = -1;
 	strlcpy(subsys->desc->fw_name, desc->name,
 			sizeof(subsys->desc->fw_name));
+
+#ifdef ODM_WT_EDIT
+#if defined(WT_FINAL_RELEASE) || defined(WT_COMPILE_FACTORY_VERSION)
+	subsys->restart_level = RESET_SUBSYS_COUPLED;
+#else
+	subsys->restart_level = RESET_SOC;
+#endif //WT_FINAL_RELEASE
+#endif /* ODM_WT_EDIT */
 
 	subsys->notify = subsys_notif_add_subsys(desc->name);
 

@@ -33,6 +33,13 @@
 #include <soc/qcom/watchdog.h>
 #include <linux/dma-mapping.h>
 
+#ifdef VENDOR_EDIT
+#include "oppo_watchdog_util.h"
+#endif
+
+#ifdef ODM_WT_EDIT
+#include <linux/wt_system_monitor.h>
+#endif /* ODM_WT_EDIT */
 #define MODULE_NAME "msm_watchdog"
 #define WDT0_ACCSCSSNBARK_INT 0
 #define TCSR_WDT_CFG	0x30
@@ -55,7 +62,7 @@
 
 static struct msm_watchdog_data *wdog_data;
 
-static int cpu_idle_pc_state[NR_CPUS];
+int cpu_idle_pc_state[NR_CPUS];
 
 /*
  * user_pet_enable:
@@ -389,12 +396,20 @@ static void keep_alive_response(void *info)
 static void ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 {
 	int cpu;
-
+#ifdef VENDOR_EDIT
+	cpumask_t mask;
+	get_cpu_ping_mask(&mask);
+#endif /*VENDOR_EDIT*/
 	cpumask_clear(&wdog_dd->alive_mask);
 	/* Make sure alive mask is cleared and set in order */
 	smp_mb();
+
+#ifdef VENDOR_EDIT
+	for_each_cpu(cpu, &mask) {
+#else
 	for_each_cpu(cpu, cpu_online_mask) {
 		if (!cpu_idle_pc_state[cpu] && !cpu_isolated(cpu))
+#endif /*VENDOR_EDIT*/
 			smp_call_function_single(cpu, keep_alive_response,
 						 wdog_dd, 1);
 	}
@@ -437,6 +452,10 @@ static __ref int watchdog_kthread(void *arg)
 			delay_time = msecs_to_jiffies(wdog_dd->pet_time);
 			pet_watchdog(wdog_dd);
 		}
+
+#ifdef VENDOR_EDIT
+		reset_recovery_tried();
+#endif
 		/* Check again before scheduling
 		 * Could have been changed on other cpu
 		 */
@@ -445,6 +464,286 @@ static __ref int watchdog_kthread(void *arg)
 	return 0;
 }
 
+
+#ifdef VENDOR_EDIT
+#ifdef HANG_OPPO_ALL
+
+#ifdef CONFIG_OPPO_DAILY_BUILD    // user version, not release
+#define CHECK_BOOT_TIME 480
+#else
+#define CHECK_BOOT_TIME 240
+#endif
+
+struct task_struct *boot_complete_timer;
+typedef void *fl_owner_t;
+
+extern struct file *filp_open(const char *, int, umode_t);
+extern int filp_close(struct file *, fl_owner_t id);
+extern void log_boot(char *str);
+extern void phx_monit(const char *monitor_command);
+extern void kernel_restart(char *cmd);
+extern int write_to_reserve1(struct pon_struct *pon_info, int fatal_error);
+extern int need_recovery(struct pon_struct *pon_info);
+extern int creds_change_dac(void);
+extern int creds_change_id(void);
+#ifndef O_RDONLY
+#define O_RDONLY  00
+#endif
+
+int hang_oppo_main_on = 1;   //default on
+int hang_oppo_recovery_method = RESTART_AND_RECOVERY;
+static int hang_oppo_kernel_time = CHECK_BOOT_TIME;
+
+static int __init HangOppoMainOn(char *str)
+{
+    get_option(&str,&hang_oppo_main_on);
+
+    pr_info("hang_oppo_main_on %d\n", hang_oppo_main_on);
+
+    return 1;
+}
+__setup("phx_rus_conf.main_on=", HangOppoMainOn);
+
+static int __init HangOppoRecoveryMethod(char *str)
+{
+    get_option(&str,&hang_oppo_recovery_method);
+
+    pr_info("hang_oppo_recovery_method %d\n", hang_oppo_recovery_method);
+
+    return 1;
+}
+__setup("phx_rus_conf.recovery_method=", HangOppoRecoveryMethod);
+
+static int __init HangOppoKernelTime(char *str)
+{
+    get_option(&str,&hang_oppo_kernel_time);
+
+    pr_info("hang_oppo_kernel_time %d\n", hang_oppo_kernel_time);
+
+    return 1;
+}
+__setup("phx_rus_conf.kernel_time=", HangOppoKernelTime);
+
+int op_bootcompleted(void)
+{
+    struct file *opfile;
+    ssize_t size;
+    loff_t offsize;
+    char data_info[6] = {'\0'};
+    mm_segment_t old_fs;
+
+    opfile = filp_open("/proc/opbootcomplete", O_RDONLY, 0444);
+    if (IS_ERR(opfile)) {
+        pr_err("open /proc/opbootcomplete error:\n");
+        return -1;
+    }
+
+    offsize = 0;
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
+    size = vfs_read(opfile,data_info,sizeof(data_info),&offsize);
+    if (size < 0) {
+        pr_err("data_info %s size %ld", data_info, size);
+        set_fs(old_fs);
+        return -1;
+    }
+    set_fs(old_fs);
+    filp_close(opfile,NULL);
+
+    if (strncmp(data_info, "true", 4) == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+int op_isLongTimeBoot(void)
+{
+    struct file *opfile;
+    ssize_t size;
+    loff_t offsize;
+    char data_info[16] = {'\0'};
+    mm_segment_t old_fs;
+
+    opfile = filp_open("/proc/opbootfrom", O_RDONLY, 0444);
+    if (IS_ERR(opfile)) {
+        pr_err("open /proc/opbootfrom error:\n");
+        return -1;
+    }
+
+    offsize = 0;
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
+    size = vfs_read(opfile,data_info,sizeof(data_info),&offsize);
+    if (size < 0) {
+        pr_err("data_info %s size %ld", data_info, size);
+        set_fs(old_fs);
+        return -1;
+    }
+    set_fs(old_fs);
+    filp_close(opfile,NULL);
+
+    if (strncmp(data_info, "normal", 6) == 0) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int data_need_wipe(void)
+{
+    struct file *opfile;
+    int rc;
+
+    opfile = filp_open("/data/oppo/log/opporeserve/recovery_info", O_CREAT | O_RDWR, 0764);
+
+    if (IS_ERR(opfile)) {
+        pr_err("data_need_wipe open /data/oppo/log/opporeserve/recovery_info error: (%ld)\n", PTR_ERR(opfile));
+        if((PTR_ERR(opfile) == (-EROFS)) || (PTR_ERR(opfile) == (-ENOENT)) || (PTR_ERR(opfile) == (-ENOSPC))) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    rc = vfs_fsync(opfile, 1);
+    if (rc) {
+        pr_err("sync returns %d\n", rc);
+    }
+
+    if(opfile) {
+        filp_close(opfile,NULL);
+    }
+
+    return 0;
+}
+
+int set_fatal_err_to_recovery(void)
+{
+    int rc;
+    ssize_t size;
+    loff_t offsize = 0;
+    struct file *opfile;
+    mm_segment_t old_fs;
+    char data_info[24] = {'\0'};
+
+    creds_change_id();
+
+    opfile = filp_open("/cache/recovery/command", O_CREAT | O_RDWR, 0764);
+
+    if (IS_ERR(opfile)) {
+        pr_err("open /cache/recovery/command error: (%ld)\n", PTR_ERR(opfile));
+        return -1;
+    }
+
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
+
+    if(data_need_wipe())
+    {
+        strcpy(data_info, OPPO_FATAL_ERR_TO_WIPEDATA);
+    } else {
+        strcpy(data_info, OPPO_FATAL_ERR_TO_RECOVERY);
+    }
+
+    pr_info("data_info %s\n", data_info);
+
+    size = vfs_write(opfile, data_info, sizeof(data_info), &offsize);
+
+    if (size < 0) {
+         pr_err("vfs_write data_info %s size %ld \n", data_info, size);
+         set_fs(old_fs);
+         return -1;
+    }
+    rc = vfs_fsync(opfile, 1);
+    if (rc) {
+        pr_err("sync returns %d\n", rc);
+    }
+
+    set_fs(old_fs);
+
+    if(opfile) {
+        filp_close(opfile,NULL);
+    }
+
+    return 1;
+}
+
+static int op_start_check_bootup(void)
+{
+    struct pon_struct pon_info;
+    int hang_oppo_8_mins = 0;
+
+#ifdef CONFIG_OPPO_DAILY_BUILD    // user version, not release
+    hang_oppo_8_mins = 1;
+    schedule_timeout_interruptible(hang_oppo_kernel_time * HZ);
+#else
+    if(op_isLongTimeBoot()) {
+        hang_oppo_8_mins = 1;
+        schedule_timeout_interruptible(hang_oppo_kernel_time * HZ);
+    }
+#endif
+
+    pr_err("op_start_check_bootup:\n");
+
+    if (0 == op_bootcompleted()) {
+        struct timespec ts;
+        struct rtc_time tm;
+        char err_info[60] = {0};
+
+        getnstimeofday(&ts);
+        rtc_time_to_tm(ts.tv_sec, &tm);
+
+        if(hang_oppo_8_mins) {
+            sprintf(err_info, "SET_BOOTERROR@ERROR_HANG_OPPO_OVER_8_MINS@%d-%d-%d %d:%d:%d",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            pr_err("SET_BOOTERROR@ERROR_HANG_OPPO_OVER_8_MINS@%d-%d-%d %d:%d:%d\n",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+        } else {
+            sprintf(err_info, "SET_BOOTERROR@ERROR_HANG_OPPO_OVER_4_MINS@%d-%d-%d %d:%d:%d",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            pr_err("SET_BOOTERROR@ERROR_HANG_OPPO_OVER_4_MINS@%d-%d-%d %d:%d:%d\n",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+        }
+
+        log_boot(err_info);
+        phx_monit(err_info);
+        // wait to collect hang oppo log finished
+        schedule_timeout_interruptible(20 * HZ);
+        if(need_recovery(&pon_info)) {
+            set_fatal_err_to_recovery();
+            kernel_restart("recovery");
+        } else {
+            write_to_reserve1(&pon_info,FATAL_FLAG);
+            if(hang_oppo_recovery_method) {
+                kernel_restart("boot didn't complete in 480S!");
+            }
+        }
+    } else {
+        memset(&pon_info, 0, SIZE_OF_PON_STRUCT);
+        write_to_reserve1(&pon_info,0);
+    }
+
+    return 0;
+
+}
+
+//start with watchdog, kick a 240/480s timer for bootcomplete
+static int opmonitor_boot_kthread(void *dummy)
+{
+    set_user_nice(current, 0);
+    pr_err("opmonitor_boot_kthread:\n");
+
+    if(hang_oppo_kernel_time) {
+        schedule_timeout_interruptible(hang_oppo_kernel_time * HZ);
+    } else {
+        schedule_timeout_interruptible(CHECK_BOOT_TIME * HZ);
+    }
+    op_start_check_bootup();
+    return 0;
+}
+#endif
+#endif /* VENDOR_EDIT */
 static int wdog_cpu_pm_notify(struct notifier_block *self,
 			      unsigned long action, void *v)
 {
@@ -521,14 +820,52 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	nanosec_rem = do_div(t, 1000000000);
 	dev_info(wdog_dd->dev, "Watchdog bark! Now = %lu.%06lu\n",
 			(unsigned long) t, nanosec_rem / 1000);
+#ifdef ODM_WT_EDIT
+#ifdef WT_BOOT_REASON
+	save_panic_key_log("Watchdog bark! Now = %lu.%06lu\n",
+			(unsigned long) t, nanosec_rem / 1000);
+#endif
+#endif /* ODM_WT_EDIT */
 
 	nanosec_rem = do_div(wdog_dd->last_pet, 1000000000);
 	dev_info(wdog_dd->dev, "Watchdog last pet at %lu.%06lu\n",
 			(unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
-	if (wdog_dd->do_ipi_ping)
+#ifdef ODM_WT_EDIT
+#ifdef WT_BOOT_REASON
+        save_panic_key_log("Watchdog last pet at %lu.%06lu\n",
+                        (unsigned long) wdog_dd->last_pet, nanosec_rem / 1000);
+#endif
+#endif /* ODM_WT_EDIT */
+
+        if (wdog_dd->do_ipi_ping)
+                dump_cpu_alive_mask(wdog_dd);
+#ifdef ODM_WT_EDIT
+#ifdef WT_BOOT_REASON
+        set_reset_magic(RESET_MAGIC_WDT_BARK);
+#endif
+#endif /* ODM_WT_EDIT */
+
+	if (wdog_dd->do_ipi_ping) {
 		dump_cpu_alive_mask(wdog_dd);
+#ifdef VENDOR_EDIT
+		dump_cpu_online_mask();
+#endif
+	}
+#ifdef VENDOR_EDIT
+	if (try_to_recover_pending(wdog_dd->watchdog_task)) {
+		pet_watchdog(wdog_dd);
+		return IRQ_HANDLED;
+	}
+
+	print_smp_call_cpu();
+	dump_wdog_cpu(wdog_dd->watchdog_task);
+#endif
+#ifdef VENDOR_EDIT
+	panic("Handle a watchdog bite! - Falling back to kernel panic!");
+#else
 	msm_trigger_wdog_bite();
 	panic("Failed to cause a watchdog bite! - Falling back to kernel panic!");
+#endif 
 	return IRQ_HANDLED;
 }
 
@@ -887,6 +1224,12 @@ static int msm_watchdog_probe(struct platform_device *pdev)
 	md_entry.size = sizeof(*wdog_dd);
 	if (msm_minidump_add_region(&md_entry))
 		pr_info("Failed to add Watchdog data in Minidump\n");
+#ifdef VENDOR_EDIT
+        ret = init_oppo_watchlog();
+        if (ret < 0) {
+                pr_info("Failed to init oppo watchlog");
+        }
+#endif
 
 	return 0;
 err:

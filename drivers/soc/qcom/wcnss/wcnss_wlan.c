@@ -45,6 +45,10 @@
 #include <soc/qcom/subsystem_notif.h>
 
 #include <soc/qcom/smd.h>
+#ifdef ODM_WT_EDIT
+//hangtianqi porting WT patch 2019/3/29
+#include <linux/hardware_info.h>
+#endif /* ODM_WT_EDIT */
 
 #define DEVICE "wcnss_wlan"
 #define CTRL_DEVICE "wcnss_ctrl"
@@ -2734,6 +2738,36 @@ static const struct file_operations wcnss_ctrl_fops = {
 	.open = wcnss_ctrl_open,
 	.write = wcnss_ctrl_write,
 };
+#ifdef ODM_WT_EDIT
+//hangtianqi porting WT patch 2019/3/29
+static  void parse_cmldine_for_wcnss(char *boardid_info)
+{
+	char* boadrid_start;
+	boadrid_start = strstr(saved_command_line,"board_id=");
+        pr_debug("%s: cmd_line: %s\n",__func__,saved_command_line);
+	if(boadrid_start != NULL){
+	    strncpy(boardid_info, boadrid_start+sizeof("board_id=")-1, 9);
+        pr_debug("%s: boardid_info:%s\n",__func__,boardid_info);
+	}else{
+	    pr_err("%s: boarid not found!\n",__func__);
+	}
+}
+
+static bool autodetect_xo_featue_disabled(void){
+	char boardid_info_wcnss[HARDWARE_MAX_ITEM_LONGTH] = {0,};
+	parse_cmldine_for_wcnss(boardid_info_wcnss);
+        if ((0 == strcmp(boardid_info_wcnss, "S88051AA1"))||
+            (0 == strcmp(boardid_info_wcnss, "S88051CA1"))||
+            (0 == strcmp(boardid_info_wcnss, "S88051EA1"))||
+            (0 == strcmp(boardid_info_wcnss, "S88051GA1"))||
+            (0 == strcmp(boardid_info_wcnss, "S88051RA1"))||
+            (0 == strcmp(boardid_info_wcnss, "S88051SA1"))){
+	        pr_debug("%s: This device removed the XO\n", __func__);
+                return true;
+	}
+	return false;
+}
+#endif /* ODM_WT_EDIT */
 
 static int
 wcnss_trigger_config(struct platform_device *pdev)
@@ -2787,10 +2821,21 @@ wcnss_trigger_config(struct platform_device *pdev)
 	penv->wlan_config.is_pronto_vadc = is_pronto_vadc;
 	penv->wlan_config.is_pronto_v3 = is_pronto_v3;
 
-	if (has_autodetect_xo == WCNSS_CONFIG_UNSPECIFIED && has_pronto_hw) {
-		has_autodetect_xo =
-			of_property_read_bool(node, "qcom,has-autodetect-xo");
-	}
+#ifndef ODM_WT_EDIT
+//hangtianqi porting WT patch 2019/3/29
+       if (has_autodetect_xo == WCNSS_CONFIG_UNSPECIFIED && has_pronto_hw) {
+               has_autodetect_xo =
+                       of_property_read_bool(node, "qcom,has-autodetect-xo");
+ 	}
+#else  /* ODM_WT_EDIT */
+        if(!autodetect_xo_featue_disabled()){
+                if (has_autodetect_xo == WCNSS_CONFIG_UNSPECIFIED && has_pronto_hw) {
+                        has_autodetect_xo =
+                                of_property_read_bool(node, "qcom,has-autodetect-xo");
+                }
+        }
+#endif /* ODM_WT_EDIT */
+
 
 	penv->thermal_mitigation = 0;
 	strlcpy(penv->wcnss_version, "INVALID", WCNSS_VERSION_LEN);
