@@ -482,7 +482,12 @@ static int qpnp_flash_led_init_settings(struct qpnp_flash_led *led)
 	if (rc < 0)
 		return rc;
 
+#ifdef ODM_WT_EDIT
+    pr_debug("flashled num_snodes=%d", led->num_snodes);
+    if (led->num_snodes > LED3 && led->fnode[LED3].strobe_sel == LPG_STROBE) {
+#else
 	if (led->fnode[LED3].strobe_sel == LPG_STROBE) {
+#endif
 		rc = qpnp_flash_led_masked_write(led,
 			FLASH_LED_REG_LPG_INPUT_CTRL(led->base),
 			LPG_INPUT_SEL_BIT, LPG_INPUT_SEL_BIT);
