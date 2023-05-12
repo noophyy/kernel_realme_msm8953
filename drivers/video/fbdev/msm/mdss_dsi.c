@@ -28,6 +28,9 @@
 #include <linux/pm_qos.h>
 #include <linux/mdss_io_util.h>
 #include <linux/dma-buf.h>
+#ifdef ODM_WT_EDIT
+#include <linux/update_tpfw_notifier.h>
+#endif
 
 #include "mdss.h"
 #include "mdss_panel.h"
@@ -45,6 +48,15 @@ static struct mdss_dsi_data *mdss_dsi_res;
 #define DSI_DISABLE_PC_LATENCY 100
 #define DSI_ENABLE_PC_LATENCY PM_QOS_DEFAULT_VALUE
 
+#ifdef ODM_WT_EDIT
+extern int ilitek_tp;
+extern void lcd_resume_load_ili_fw(void);
+extern int g_shutdown_pending;
+extern int g_gesture;
+extern int novatek_tp;
+extern void lcd_resume_load_nvt_fw(void);
+extern void lcd_resume_load_himax_fw(void);
+#endif
 static struct pm_qos_request mdss_dsi_pm_qos_request;
 
 void mdss_dump_dsi_debug_bus(u32 bus_dump_flag,
@@ -374,6 +386,10 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 		goto end;
 	}
 
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , +++\n", __func__);
+	#endif
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
@@ -391,29 +407,140 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 					__func__);
 	}
 
+#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	if(g_shutdown_pending == 1){
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+			pr_debug("reset disable: pinctrl not enabled\n");
+	} else {
+		if(pdata->panel_info.vddio_always_on) {
+			pr_debug("%s: not do  pinctrl \n", __func__);
+		}else if(g_gesture == 0 || pdata->panel_info.panel_dead == 1){
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+				pr_debug("reset disable: pinctrl not enabled\n");
+		}
+	}
+
+#else /* ODM_WT_EDIT */
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
+#endif /* ODM_WT_EDIT */
 
+
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
+	if(pdata->panel_info.panel_dead == 0) {
+		if ( g_shutdown_pending == 0 && g_gesture == 1) {
+				pr_info("%s: lcd power-off and do not reset \n", __func__);
+			} else {
+				if(pdata->panel_info.vddio_always_on) {
+					ret = msm_mdss_enable_vreg_truly(
+					ctrl_pdata->panel_power_data.vreg_config,
+					ctrl_pdata->panel_power_data.num_vreg, 0);
+				}else{
+					ret = msm_mdss_enable_vreg(
+					ctrl_pdata->panel_power_data.vreg_config,
+					ctrl_pdata->panel_power_data.num_vreg, 0);
+				}
+			}
+		} else {
+			if(pdata->panel_info.vddio_always_on) {
+				ret = msm_mdss_enable_vreg_truly(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 0);
+			}else{
+				ret = msm_mdss_enable_vreg(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 0);
+			}
+		}
+#else /* ODM_WT_EDIT */
 	ret = msm_mdss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 0);
+#endif /* ODM_WT_EDIT */
+
 	if (ret)
 		pr_err("%s: failed to disable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 
 end:
+
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---\n", __func__);
+	#endif
 	return ret;
 }
 
-static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
+#ifdef ODM_WT_EDIT
+ //Tianchen.Zhao@ODM_RH.Display Porting
+int mdss_dsi_panel_hx_power_off(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , +++", __func__);
+	#endif
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	ret = mdss_dsi_panel_reset(pdata, 0);
+	if (ret) {
+		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
+		ret = 0;
+	}
+
+	if(g_shutdown_pending == 1){
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+			pr_debug("reset disable: pinctrl not enabled\n");
+	} else {
+		if(pdata->panel_info.vddio_always_on) {
+			pr_debug("%s: not do  pinctrl \n", __func__);
+		}else if(g_gesture == 0 || pdata->panel_info.panel_dead == 1){
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+				pr_debug("reset disable: pinctrl not enabled\n");
+		}
+	}
+
+		ret = msm_mdss_enable_vreg_truly(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 0);
+
+	if (ret)
+		pr_err("%s: failed to disable vregs for %s\n",
+			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+
+end:
+
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---", __func__);
+	#endif
+	return ret;
+}
+#endif /* ODM_WT_EDIT */
+
+static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
+{
+	int ret = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	static int power_on = 0;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
+
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , +++\n", __func__);
+	#endif
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
@@ -427,9 +554,45 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 					__func__);
 	}
 
+#ifdef ODM_WT_EDIT
+	if(ctrl_pdata->panel_power_data.num_vreg == 0) { // no panel active
+		ret = msm_mdss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 1);
+	}else if (ctrl_pdata->panel_power_data.num_vreg > 3 && !regulator_is_enabled(ctrl_pdata->panel_power_data.vreg_config[3].vreg)) {
+		pr_debug("%s:  enable regulator \n", __func__);
+		if(pdata->panel_info.vddio_always_on) {
+			ret = msm_mdss_enable_vreg_truly(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 1);
+		}else {
+			ret = msm_mdss_enable_vreg(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 1);
+		}
+	}else {
+		if(power_on == true) {
+				pr_debug("%s: not do enable regulator \n", __func__);
+		}else {
+			power_on = true;
+			pr_debug("%s: first time  power_on = true \n", __func__);
+			if(pdata->panel_info.vddio_always_on) {
+				ret = msm_mdss_enable_vreg_truly(
+					ctrl_pdata->panel_power_data.vreg_config,
+					ctrl_pdata->panel_power_data.num_vreg, 1);
+			}else {
+				ret = msm_mdss_enable_vreg(
+				ctrl_pdata->panel_power_data.vreg_config,
+				ctrl_pdata->panel_power_data.num_vreg, 1);
+			}
+		}
+	}
+#else /* ODM_WT_EDIT */
 	ret = msm_mdss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 1);
+#endif /* ODM_WT_EDIT */
+
 	if (ret) {
 		pr_err("%s: failed to enable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
@@ -452,6 +615,10 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			pr_err("%s: Panel reset failed. rc=%d\n",
 					__func__, ret);
 	}
+
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---\n", __func__);
+	#endif
 
 	return ret;
 }
@@ -546,7 +713,16 @@ int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata,
 
 	switch (power_state) {
 	case MDSS_PANEL_POWER_OFF:
+		#ifdef ODM_WT_EDIT
+		//Tianchen.Zhao@ODM_RH.Display Porting
+		if (pinfo->gesture_off_cmd && (g_gesture == 0)) {
+			pr_err("%s  g_gesture hx831112a_huaxian not do power off \n", __func__);
+		} else {
+			ret = mdss_dsi_panel_power_off(pdata);
+		}
+		#else /* ODM_WT_EDIT */
 		ret = mdss_dsi_panel_power_off(pdata);
+		#endif /* ODM_WT_EDIT */
 		break;
 	case MDSS_PANEL_POWER_ON:
 		if (mdss_dsi_is_panel_on_ulp(pdata)) {
@@ -1338,6 +1514,10 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 		return -EINVAL;
 	}
 
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , +++\n", __func__);
+	#endif
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
@@ -1354,8 +1534,24 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 
 	if (mdss_panel_is_power_on(power_state)) {
 		pr_debug("%s: dsi_off with panel always on\n", __func__);
+#ifdef ODM_WT_EDIT
+		if (pdata->panel_info.mipi.lp11_deinit == true) {
+			ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
+			if (ret) {
+				pr_err("%s: Panel power off failed line(%d) ret = %d.\n", __func__, __LINE__, ret);
+			}
+		}
+#endif /* ODM_WT_EDIT */
 		goto panel_power_ctrl;
 	}
+#ifdef ODM_WT_EDIT
+			if (pdata->panel_info.mipi.lp11_deinit == true) {
+				ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
+				if (ret) {
+					pr_err("%s: Panel power off failed line(%d) ret = %d.\n", __func__, __LINE__, ret);
+				}
+			}
+#endif /* ODM_WT_EDIT */
 
 	/*
 	 * Link clocks should be turned off before PHY can be disabled.
@@ -1384,7 +1580,12 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 			  MDSS_DSI_CORE_CLK, MDSS_DSI_CLK_OFF);
 
 panel_power_ctrl:
+#ifdef ODM_WT_EDIT
+	if (pdata->panel_info.mipi.lp11_deinit == false)
+		ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
+#else /* ODM_WT_EDIT */
 	ret = mdss_dsi_panel_power_ctrl(pdata, power_state);
+#endif /* ODM_WT_EDIT */
 	if (ret) {
 		pr_err("%s: Panel power off failed\n", __func__);
 		goto end;
@@ -1399,6 +1600,9 @@ panel_power_ctrl:
 	ctrl_pdata->cur_max_pkt_size = 0;
 end:
 	pr_debug("%s-:\n", __func__);
+	#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---\n", __func__);
+	#endif
 
 	return ret;
 }
@@ -1517,6 +1721,10 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , +++\n", __func__);
+#endif
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
@@ -1541,6 +1749,14 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		pr_debug("%s: panel already on\n", __func__);
 		goto end;
 	}
+#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	if (strncmp(pinfo->panel_name, "hx831112a_huaxian", strlen("hx831112a_huaxian")) == 0) {
+		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+			pr_debug("reset disable: pinctrl not false\n");
+		usleep_range(2000,3000);
+	}
+#endif
 
 	ret = mdss_dsi_panel_power_ctrl(pdata, MDSS_PANEL_POWER_ON);
 	if (ret) {
@@ -1559,6 +1775,19 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 		goto end;
 	}
 
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
+	if(strstr(pdata->panel_info.panel_name, "nt36525") != NULL){
+		if (mipi->lp11_init) {
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
+				pr_debug("reset enable: pinctrl not enabled\n");
+				usleep_range(5000, 6000);
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
+				pr_debug("reset enable: pinctrl not enabled\n");
+		}
+		usleep_range(10000, 11000);
+	}
+#endif
 	/*
 	 * Enable DSI core clocks prior to resetting and initializing DSI
 	 * Phy. Phy and ctrl setup need to be done before enabling the link
@@ -1591,11 +1820,28 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	 * data lanes for LP11 init
 	 */
 	if (mipi->lp11_init) {
+		#ifndef ODM_WT_EDIT
+		//Tianchen.Zhao@ODM_RH.Display Porting
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
+		#else
+		if(strstr(pdata->panel_info.panel_name, "nt36525") == NULL){
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
+				pr_debug("reset enable: pinctrl not enabled\n");
+		}
+		#endif
 		mdss_dsi_panel_reset(pdata, 1);
 	}
-
+	#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.TP Porting
+	if(novatek_tp ==1) {
+		lcd_resume_load_nvt_fw();
+	} else if(ilitek_tp == 1) {
+		lcd_resume_load_ili_fw();
+	} else {
+		update_tpfw_notifier_call_chain(1,NULL);
+	}
+	#endif
 	if (mipi->init_delay)
 		usleep_range(mipi->init_delay, mipi->init_delay + 10);
 
@@ -1614,6 +1860,11 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 
 end:
 	pr_debug("%s-:\n", __func__);
+
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---\n", __func__);
+#endif
+
 	return ret;
 }
 
@@ -1692,6 +1943,10 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+#ifdef ODM_WT_EDIT
+		pr_info("LCD_LOG : %s , +++\n", __func__);
+#endif
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
@@ -1750,6 +2005,10 @@ error:
 	mdss_dsi_pm_qos_update_request(DSI_ENABLE_PC_LATENCY);
 
 	pr_debug("%s-:\n", __func__);
+
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s , ---\n", __func__);
+#endif
 
 	return ret;
 }

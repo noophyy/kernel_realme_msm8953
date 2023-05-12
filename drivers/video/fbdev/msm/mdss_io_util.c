@@ -16,7 +16,25 @@
 #include <linux/delay.h>
 #include <linux/mdss_io_util.h>
 
+#ifdef VENDOR_EDIT
+#include <linux/regulator/of_regulator.h>
+#include <linux/regulator/consumer.h>
+#include <linux/regulator/driver.h>
+#include <linux/regulator/machine.h>
+#include "../../../regulator/internal.h"
+#endif
+
 #define MAX_I2C_CMDS  16
+
+#ifdef ODM_WT_EDIT
+extern int g_shutdown_pending;
+extern int g_gesture;
+#endif /* ODM_WT_EDIT */
+
+#ifdef VENDOR_EDIT
+extern int himax_tp;
+#endif
+
 void mdss_reg_w(struct mdss_io_data *io, u32 offset, u32 value, u32 debug)
 {
 	u32 in_val;
@@ -285,7 +303,17 @@ int msm_mdss_enable_vreg(struct mdss_vreg *in_vreg, int num_vreg, int enable)
 					in_vreg[i].vreg_name);
 				goto vreg_set_opt_mode_fail;
 			}
+#ifdef ODM_WT_EDIT
+			if ( g_shutdown_pending == 0 && g_gesture == 1) {
+				if (!regulator_enable(in_vreg[i].vreg))
+					rc = regulator_enable(in_vreg[i].vreg);
+				pr_debug("%s: not do reset \n", __func__);
+			} else {
+				rc = regulator_enable(in_vreg[i].vreg);
+			}
+#else /* ODM_WT_EDIT */
 			rc = regulator_enable(in_vreg[i].vreg);
+#endif /* ODM_WT_EDIT */
 			if (in_vreg[i].post_on_sleep && need_sleep)
 				usleep_range((in_vreg[i].post_on_sleep * 1000),
 					(in_vreg[i].post_on_sleep * 1000) + 10);
@@ -303,10 +331,17 @@ int msm_mdss_enable_vreg(struct mdss_vreg *in_vreg, int num_vreg, int enable)
 					(in_vreg[i].pre_off_sleep * 1000) + 10);
 			regulator_set_load(in_vreg[i].vreg,
 				in_vreg[i].load[DSS_REG_MODE_DISABLE]);
-
+#ifdef ODM_WT_EDIT
+			if ( g_shutdown_pending == 0 && g_gesture == 1) {
+				pr_debug("%s: not do reset \n", __func__);
+			} else {
+				if (regulator_is_enabled(in_vreg[i].vreg))
+					regulator_disable(in_vreg[i].vreg);
+			}
+#else /* ODM_WT_EDIT */
 			if (regulator_is_enabled(in_vreg[i].vreg))
 				regulator_disable(in_vreg[i].vreg);
-
+#endif /* ODM_WT_EDIT */
 			if (in_vreg[i].post_off_sleep)
 				usleep_range((in_vreg[i].post_off_sleep * 1000),
 				(in_vreg[i].post_off_sleep * 1000) + 10);
@@ -334,6 +369,125 @@ vreg_set_opt_mode_fail:
 	return rc;
 } /* msm_mdss_enable_vreg */
 EXPORT_SYMBOL(msm_mdss_enable_vreg);
+
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
+int msm_mdss_enable_vreg_truly(struct mdss_vreg *in_vreg, int num_vreg, int enable)
+{
+	int i = 0, rc = 0;
+	bool need_sleep;
+	static int vddio_enabled = false;
+      int ibb_disable_count = 10;
+	if (enable) {
+		for (i = 0; i < num_vreg; i++) {
+
+			if(strcmp(in_vreg[i].vreg_name, "iovdd_gpio") == 0)
+			{
+				if(vddio_enabled == true)
+					continue;
+				else
+					vddio_enabled = true;
+			}
+
+			rc = PTR_RET(in_vreg[i].vreg);
+			if (rc) {
+				DEV_ERR("%pS->%s: %s regulator error. rc=%d\n",
+					__builtin_return_address(0), __func__,
+					in_vreg[i].vreg_name, rc);
+				goto vreg_set_opt_mode_fail;
+			}
+			need_sleep = !regulator_is_enabled(in_vreg[i].vreg);
+			if (in_vreg[i].pre_on_sleep && need_sleep)
+				usleep_range((in_vreg[i].pre_on_sleep * 1000),
+					(in_vreg[i].pre_on_sleep * 1000) + 10);
+			rc = regulator_set_load(in_vreg[i].vreg,
+				in_vreg[i].load[DSS_REG_MODE_ENABLE]);
+			if (rc < 0) {
+				DEV_ERR("%pS->%s: %s set opt m fail\n",
+					__builtin_return_address(0), __func__,
+					in_vreg[i].vreg_name);
+				goto vreg_set_opt_mode_fail;
+			}
+			rc = regulator_enable(in_vreg[i].vreg);
+			if (in_vreg[i].post_on_sleep && need_sleep)
+				usleep_range((in_vreg[i].post_on_sleep * 1000),
+					(in_vreg[i].post_on_sleep * 1000) + 10);
+#ifdef VENDOR_EDIT
+                if(!strcmp("ibb",in_vreg[i].vreg_name)){
+                    pr_info("%s-%d: vreg_name=%s,current_usecount=%d\n",__func__,__LINE__,
+                        in_vreg[i].vreg_name,in_vreg[i].vreg->rdev->use_count);
+                }
+#endif
+			if (rc < 0) {
+				DEV_ERR("%pS->%s: %s enable failed\n",
+					__builtin_return_address(0), __func__,
+					in_vreg[i].vreg_name);
+				goto disable_vreg;
+			}
+		}
+	} else {
+		for (i = num_vreg-1; i >= 0; i--) {
+
+			if(strcmp(in_vreg[i].vreg_name, "iovdd_gpio") == 0)continue;
+
+			if (in_vreg[i].pre_off_sleep)
+				usleep_range((in_vreg[i].pre_off_sleep * 1000),
+					(in_vreg[i].pre_off_sleep * 1000) + 10);
+			regulator_set_load(in_vreg[i].vreg,
+				in_vreg[i].load[DSS_REG_MODE_DISABLE]);
+			if (regulator_is_enabled(in_vreg[i].vreg))
+				regulator_disable(in_vreg[i].vreg);
+#ifdef VENDOR_EDIT
+                if(!strcmp("ibb",in_vreg[i].vreg_name)){
+                    pr_info("%s-%d: vreg_name=%s,current_usecount=%d\n",__func__,__LINE__,
+                        in_vreg[i].vreg_name,in_vreg[i].vreg->rdev->use_count);
+                }
+#endif
+                #ifdef VENDOR_EDIT
+                if ((himax_tp == 1) && (strcmp(in_vreg[i].vreg_name, "ibb") == 0)) {
+
+                    while ((in_vreg[i].vreg->rdev->use_count > 0) && (ibb_disable_count > 0)) {
+                        usleep_range(1000,1010);
+                        regulator_disable(in_vreg[i].vreg);
+                        ibb_disable_count--;
+
+                        pr_err("%s-%d:retry %d time ,disable ibb power-supply,current_usecount=%d\n",
+                            __func__,__LINE__,ibb_disable_count,in_vreg[i].vreg->rdev->use_count);
+
+                        if (ibb_disable_count == 0)
+                            dump_stack();
+                    }
+                }
+                #endif
+
+			if (in_vreg[i].post_off_sleep)
+				usleep_range((in_vreg[i].post_off_sleep * 1000),
+				(in_vreg[i].post_off_sleep * 1000) + 10);
+		}
+	}
+	return rc;
+
+disable_vreg:
+	regulator_set_load(in_vreg[i].vreg,
+					in_vreg[i].load[DSS_REG_MODE_DISABLE]);
+
+vreg_set_opt_mode_fail:
+	for (i--; i >= 0; i--) {
+		if (in_vreg[i].pre_off_sleep)
+			usleep_range((in_vreg[i].pre_off_sleep * 1000),
+				(in_vreg[i].pre_off_sleep * 1000) + 10);
+		regulator_set_load(in_vreg[i].vreg,
+			in_vreg[i].load[DSS_REG_MODE_DISABLE]);
+		regulator_disable(in_vreg[i].vreg);
+		if (in_vreg[i].post_off_sleep)
+			usleep_range((in_vreg[i].post_off_sleep * 1000),
+				(in_vreg[i].post_off_sleep * 1000) + 10);
+	}
+
+	return rc;
+} /* msm_mdss_enable_vreg */
+EXPORT_SYMBOL(msm_mdss_enable_vreg_truly);
+#endif
 
 int msm_mdss_enable_gpio(struct mdss_gpio *in_gpio, int num_gpio, int enable)
 {

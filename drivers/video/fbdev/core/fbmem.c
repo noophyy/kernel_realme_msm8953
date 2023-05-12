@@ -1064,6 +1064,11 @@ fb_blank(struct fb_info *info, int blank)
 	event.info = info;
 	event.data = &blank;
 
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s blank = %d, +++\n", __func__, blank);
+#endif
+
+
 	early_ret = fb_notifier_call_chain(FB_EARLY_EVENT_BLANK, &event);
 
 	if (info->fbops->fb_blank)
@@ -1079,6 +1084,10 @@ fb_blank(struct fb_info *info, int blank)
 		if (!early_ret)
 			fb_notifier_call_chain(FB_R_EARLY_EVENT_BLANK, &event);
 	}
+
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s blank = %d, ---\n", __func__, blank);
+#endif
 
  	return ret;
 }

@@ -30,12 +30,45 @@
 #endif
 #include "mdss_debug.h"
 
+#ifdef ODM_WT_EDIT
+#include "linux/hardware_info.h"
+#endif
+
 #define DT_CMD_HDR 6
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
 #define VSYNC_DELAY msecs_to_jiffies(17)
 
+#ifdef VENDOR_EDIT
+#define LCD_SCREEN_ON 1
+#define LCD_SCREEN_OFF 0
+#define LCD_BACKLIGHT_OFF 0
+extern void wakeup_src_clean(void);
+#endif /* VENDOR_EDIT */
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
+extern int g_shutdown_pending;
+extern int g_gesture;
+extern int himax_tp;
+static int test_dimming = 0;
+extern void core_config_sleep_ctrl(bool out);
+extern int mdss_dsi_panel_hx_power_off(struct mdss_panel_data *pdata);
+#endif /* ODM_WT_EDIT */
+
+
 DEFINE_LED_TRIGGER(bl_led_trigger);
+#ifdef VENDOR_EDIT
+/*
+* add for silence and sau mode
+*/
+extern int lcd_closebl_flag;
+#endif /*VENDOR_EDIT*/
+
+#ifdef VENDOR_EDIT
+//add for lcd cabc
+static int cabc_lastlevel = 1;
+#endif
+
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -212,11 +245,94 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
-static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
+
+#ifdef ODM_WT_EDIT
+static char led_pwm1[3] = {0x51, 0x0, 0x0};	/* DTYPE_DCS_WRITE1 */
+
 static struct dsi_cmd_desc backlight_cmd = {
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1)},
 	led_pwm1
+	};
+#ifdef VENDOR_EDIT
+/*
+* add for lcd driver cabc
+*/
+bool flag_lcd_off = false;
+struct mdss_dsi_ctrl_pdata *gl_ctrl_pdata;
+
+static DEFINE_MUTEX(lcd_mutex);
+enum
+{
+	CABC_CLOSE = 0,
+	CABC_UI_MODE,
+	CABC_IMAGE_MODE,
+	CABC_VIDEO_MODE,
 };
+int cabc_mode = CABC_CLOSE;
+
+int set_cabc(int level)
+{
+    int ret = 0;
+
+    mutex_lock(&lcd_mutex);
+
+    if(flag_lcd_off == true)
+    {
+        printk(KERN_INFO "lcd is off,don't allow to set cabc\n");
+        cabc_mode = level;
+        mutex_unlock(&lcd_mutex);
+        return 0;
+    }
+
+    pr_info("%s : cabc mode: %d \n",__func__,level);
+
+    switch (level) {
+        case CABC_CLOSE:
+            mdss_dsi_panel_cmds_send(gl_ctrl_pdata, &gl_ctrl_pdata->cabc_close_cmds, CMD_REQ_COMMIT);
+            break;
+        case CABC_UI_MODE:
+            mdss_dsi_panel_cmds_send(gl_ctrl_pdata, &gl_ctrl_pdata->cabc_ui_mode_cmds, CMD_REQ_COMMIT);
+            break;
+        case CABC_IMAGE_MODE:
+            mdss_dsi_panel_cmds_send(gl_ctrl_pdata, &gl_ctrl_pdata->cabc_image_mode_cmds, CMD_REQ_COMMIT);
+            break;
+        case CABC_VIDEO_MODE:
+            mdss_dsi_panel_cmds_send(gl_ctrl_pdata, &gl_ctrl_pdata->cabc_video_mode_cmds, CMD_REQ_COMMIT);
+            break;
+
+        default:
+            pr_err("%s : Unsupported CABC MODE!\n",__func__);
+            mutex_unlock(&lcd_mutex);
+            return -1;
+    }
+
+    cabc_mode = level;
+#ifdef VENDOR_EDIT
+//add for lcd cabc
+    if(level > 0) {
+        cabc_lastlevel = level;
+    }
+#endif /*VENDOR_EDIT*/
+
+    mutex_unlock(&lcd_mutex);
+    return ret;
+}
+#endif /*VENDOR_EDIT*/
+
+static char led_pwm2[2] = {0x53, 0x2C};
+static struct dsi_cmd_desc backlight_dimming_cmd[2] = {
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1)}, led_pwm1},
+	{{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm2)}, led_pwm2}
+};
+#else /* ODM_WT_EDIT */
+static char led_pwm1[2] = {0x51, 0x0};    /* DTYPE_DCS_WRITE1 */
+
+static struct dsi_cmd_desc backlight_cmd = {
+        {DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
+        led_pwm1
+ };
+#endif /* ODM_WT_EDIT */
+
 
 static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
@@ -231,11 +347,39 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 
 	pr_debug("%s: level=%d\n", __func__, level);
 
+#ifdef ODM_WT_EDIT
+	led_pwm1[1] = (unsigned char)(level >> 8);
+	led_pwm1[2] = (unsigned char)level;
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	if (strncmp(pinfo->panel_name,"ilt9881h",strlen("ilt9881h")) == 0) {
+		level = level << 1;
+		led_pwm1[1] = (unsigned char)(level >> 8);
+		led_pwm1[2] = (unsigned char)level;
+		}
+
+	if (test_dimming > 1) {
+		cmdreq.cmds = &backlight_cmd;
+		cmdreq.cmds_cnt = 1;
+	} else if(test_dimming == 1) {
+		cmdreq.cmds = backlight_dimming_cmd;
+		cmdreq.cmds_cnt = 2;
+		test_dimming++;
+		pr_err("%s: level=%d test_dimming %d \n", __func__, level, test_dimming);
+	} else {
+		cmdreq.cmds = &backlight_cmd;
+		cmdreq.cmds_cnt = 1;
+		test_dimming++;
+	}
+
+#else /* ODM_WT_EDIT */
 	led_pwm1[1] = (unsigned char)level;
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
 	cmdreq.cmds = &backlight_cmd;
 	cmdreq.cmds_cnt = 1;
+#endif /* ODM_WT_EDIT */
+
 	cmdreq.flags = CMD_REQ_COMMIT;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
@@ -516,7 +660,24 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			usleep_range(100, 110);
 			gpio_free(ctrl_pdata->disp_en_gpio);
 		}
+
+//Tianchen.Zhao@ODM_RH.Display Porting
+#ifdef ODM_WT_EDIT
+		if (g_shutdown_pending == 0) {
+			if(pdata->panel_info.vddio_always_on) {
+				pr_debug("%s: not do reset \n", __func__);
+			} else {
+				gpio_set_value((ctrl_pdata->rst_gpio), 0);
+			}
+
+		} else {
+			gpio_set_value((ctrl_pdata->rst_gpio), 0);
+		}
+
+#else /* ODM_WT_EDIT */
 		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+#endif /* ODM_WT_EDIT */
+
 		gpio_free(ctrl_pdata->rst_gpio);
 		if (gpio_is_valid(ctrl_pdata->mode_gpio))
 			gpio_free(ctrl_pdata->mode_gpio);
@@ -822,6 +983,16 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	#ifdef VENDOR_EDIT
+	/*
+	* add for silence and sau mode
+	*/
+	if (lcd_closebl_flag == 1) {
+		pr_err("%s -- MSM_BOOT_MODE__SILENCE\n",__func__);
+		bl_level = 0;
+	}
+	#endif
+
 	/*
 	 * Some backlight controllers specify a minimum duty cycle
 	 * for the backlight brightness. If the brightness is less
@@ -830,6 +1001,12 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 
 	if ((bl_level < pdata->panel_info.bl_min) && (bl_level != 0))
 		bl_level = pdata->panel_info.bl_min;
+
+#ifdef VENDOR_EDIT
+    if(LCD_BACKLIGHT_OFF == bl_level) {
+        wakeup_src_clean();
+    }
+#endif /* VENDOR_EDIT */
 
 	switch (ctrl_pdata->bklt_ctrl) {
 	case BL_WLED:
@@ -892,6 +1069,10 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	struct dsi_panel_cmds *on_cmds;
 	int ret = 0;
 
+#ifdef ODM_WT_EDIT
+	test_dimming = 0;
+#endif /* ODM_WT_EDIT */
+
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -927,6 +1108,14 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	/* Ensure low persistence mode is set as before */
 	mdss_dsi_panel_apply_display_setting(pdata, pinfo->persist_mode);
+
+#ifdef VENDOR_EDIT
+//add for lcd cabc
+    if ( cabc_lastlevel > 1) {
+        pr_err("%s:set cabc_lastlevel=%d",__func__,cabc_lastlevel);
+        set_cabc(cabc_lastlevel);
+    }
+#endif /*VENDOR_EDIT*/
 
 end:
 	pr_debug("%s:-\n", __func__);
@@ -1026,6 +1215,21 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds, CMD_REQ_COMMIT);
+#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	if (pinfo->gesture_off_cmd && (g_gesture == 0)) {
+		mdss_dsi_panel_hx_power_off(pdata);
+		if (ctrl->gesture_off_cmds.cmd_cnt)
+			mdss_dsi_panel_cmds_send(ctrl, &ctrl->gesture_off_cmds, CMD_REQ_COMMIT);
+	}
+#endif /* ODM_WT_EDIT */
+
+#ifdef ODM_WT_EDIT
+	if ((strncmp(pinfo->panel_name, "ilt9881h_hlt", strlen("ilt9881h_hlt")) == 0) && (g_gesture == 0)) {
+		core_config_sleep_ctrl(false);
+		usleep_range(40000,41000);
+	}
+#endif /* ODM_WT_EDIT */
 
 	mdss_dsi_panel_off_hdmi(ctrl, pinfo);
 
@@ -1771,23 +1975,43 @@ static bool mdss_dsi_cmp_panel_reg_v2(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	for (j = 0; j < ctrl->groups; ++j) {
 		for (i = 0; i < len; ++i) {
-			pr_debug("[%i] return:0x%x status:0x%x\n",
-				i, ctrl->return_buf[i],
-				(unsigned int)ctrl->status_value[group + i]);
-			MDSS_XLOG(ctrl->ndx, ctrl->return_buf[i],
-					ctrl->status_value[group + i]);
+	#ifdef ODM_WT_EDIT
+			if (himax_tp == 1) {
+				if (i == 0) {
+					pr_err("%s: himax_tp the first esd check not compare\n", __func__);
+					continue;
+				}
+			}
 			if (ctrl->return_buf[i] !=
-				ctrl->status_value[group + i])
-				break;
+					ctrl->status_value[group + i]) {
+					pr_err("%s: ctrl->return_buf 0x%x i %d \n",
+								__func__, ctrl->return_buf[i], i);
+					break;
+			}
+	#else /* ODM_WT_EDIT */
+			if (ctrl->return_buf[i] !=
+					ctrl->status_value[group + i])
+					break;
+	#endif/* ODM_WT_EDIT */
+
 		}
 
 		if (i == len)
 			return true;
 		group += len;
 	}
-
+	#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	if (!ctrl->panel_data.panel_info.esd_check_running) {
+		return true;
+	} else {
+		return false;
+	}
+	#else /* ODM_WT_EDIT */
 	return false;
+	#endif /* ODM_WT_EDIT */
 }
+
 
 static int mdss_dsi_gen_read_status(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
@@ -2129,6 +2353,17 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 		"qcom,ulps-enabled");
 	pr_info("%s: ulps feature %s\n", __func__,
 		(pinfo->ulps_feature_enabled ? "enabled" : "disabled"));
+#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	pinfo->vddio_always_on = of_property_read_bool(np,
+		"qcom,vddio-always-on-enabled");
+	pr_info("%s: vddio_always_on feature %s\n", __func__,
+		(pinfo->vddio_always_on ? "enabled" : "disabled"));
+	pinfo->gesture_off_cmd = of_property_read_bool(np,
+		"qcom,mdss-dsi-gesture-off-cmd");
+	pr_info("%s: vddio_always_on feature %s\n", __func__,
+		(pinfo->gesture_off_cmd ? "enabled" : "disabled"));
+#endif /* ODM_WT_EDIT */
 
 	pinfo->ulps_suspend_enabled = of_property_read_bool(np,
 		"qcom,suspend-ulps-enabled");
@@ -2699,6 +2934,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	const char *data;
 	static const char *pdest;
 	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
+#ifdef ODM_WT_EDIT
+	u32 *array;
+	int bl_i;
+#endif /* ODM_WT_EDIT */
 
 	if (mdss_dsi_is_hw_config_split(ctrl_pdata->shared_data))
 		pinfo->is_split_display = true;
@@ -2763,6 +3002,40 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-bl-max-level", &tmp);
 	pinfo->bl_max = (!rc ? tmp : 255);
 	ctrl_pdata->bklt_max = pinfo->bl_max;
+
+#ifdef ODM_WT_EDIT
+	rc = of_property_read_u32(np, "qcom,blmap-size", &tmp);
+		pinfo->blmap_size = (!rc ? tmp : 0);
+
+	if (pinfo->blmap_size) {
+		array = kzalloc(sizeof(u32) * pinfo->blmap_size, GFP_KERNEL);
+
+		if (!array)
+			return -ENOMEM;
+		rc = of_property_read_u32_array(np,
+						"qcom,blmap", array, pinfo->blmap_size);
+
+		if (rc) {
+			pr_err("%s:%d, unable to read backlight map\n",
+						__func__, __LINE__);
+			kfree(array);
+			goto error;
+		}
+
+		pinfo->blmap = kzalloc(sizeof(int) * pinfo->blmap_size,
+							GFP_KERNEL);
+		if (!pinfo->blmap) {
+			kfree(array);
+			return -ENOMEM;
+		}
+
+		for (bl_i = 0; bl_i < pinfo->blmap_size; bl_i++)
+			pinfo->blmap[bl_i] = array[bl_i];
+		kfree(array);
+	} else {
+		pinfo->blmap = NULL;
+	}
+#endif /* ODM_WT_EDIT */
 
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-interleave-mode", &tmp);
 	pinfo->mipi.interleave_mode = (!rc ? tmp : 0);
@@ -2889,6 +3162,10 @@ static int mdss_panel_parse_dt(struct device_node *np,
 					"qcom,mdss-dsi-lp11-init");
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-init-delay-us", &tmp);
 	pinfo->mipi.init_delay = (!rc ? tmp : 0);
+#ifdef ODM_WT_EDIT
+	pinfo->mipi.lp11_deinit = of_property_read_bool(np,
+					"qcom,mdss-dsi-lp11-deinit");
+#endif /* ODM_WT_EDIT */
 
 	rc = of_property_read_u32(np, "qcom,mdss-dsi-post-init-delay", &tmp);
 	pinfo->mipi.post_init_delay = (!rc ? tmp : 0);
@@ -2902,8 +3179,25 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_dsi_parse_reset_seq(np, pinfo->rst_seq, &(pinfo->rst_seq_len),
 		"qcom,mdss-dsi-reset-sequence");
 
+	#ifdef VENDOR_EDIT
+	/*
+	* add for lcd driver cabc
+	*/
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->cabc_close_cmds,
+	    "qcom,mdss-dsi-cabc-off-command", "qcom,mdss-dsi-off-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->cabc_ui_mode_cmds,
+	    "qcom,mdss-dsi-cabc-ui-command", "qcom,mdss-dsi-off-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->cabc_image_mode_cmds,
+	    "qcom,mdss-dsi-cabc-image-command", "qcom,mdss-dsi-off-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->cabc_video_mode_cmds,
+	    "qcom,mdss-dsi-cabc-video-command", "qcom,mdss-dsi-off-command-state");
+	#endif /*VENDOR_EDIT*/
+
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->gesture_off_cmds,
+		"qcom,mdss-dsi-gesture-off-command", "qcom,mdss-dsi-gesture-off-command-state");
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->idle_on_cmds,
 		"qcom,mdss-dsi-idle-on-command",
@@ -2942,6 +3236,11 @@ error:
 	return -EINVAL;
 }
 
+#ifdef ODM_WT_EDIT
+extern void devinfo_info_set(char *name, char *version, char *manufacture);
+extern char Lcm_name[HARDWARE_MAX_ITEM_LONGTH];
+#endif
+
 int mdss_dsi_panel_init(struct device_node *node,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	int ndx)
@@ -2955,6 +3254,13 @@ int mdss_dsi_panel_init(struct device_node *node,
 		return -ENODEV;
 	}
 
+	#ifdef VENDOR_EDIT
+	/*
+	* add for lcd driver cabc
+	*/
+	gl_ctrl_pdata = ctrl_pdata;
+	#endif /*VENDOR_EDIT*/
+
 	pinfo = &ctrl_pdata->panel_data.panel_info;
 
 	pr_debug("%s:%d\n", __func__, __LINE__);
@@ -2966,6 +3272,12 @@ int mdss_dsi_panel_init(struct device_node *node,
 	} else {
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
 		strlcpy(&pinfo->panel_name[0], panel_name, MDSS_MAX_PANEL_LEN);
+
+        #ifdef VENDOR_EDIT
+        strlcpy(Lcm_name, panel_name, HARDWARE_MAX_ITEM_LONGTH);
+
+        devinfo_info_set("lcd", "v001", Lcm_name);
+        #endif
 	}
 	rc = mdss_panel_parse_dt(node, ctrl_pdata);
 	if (rc) {

@@ -55,6 +55,69 @@
 #include "mdp3_ctrl.h"
 #include "mdss_sync.h"
 
+#ifdef VENDOR_EDIT
+/*
+* add for erase power by android
+*/
+#include <soc/oppo/boot_mode.h>
+#define OPPO_BOOTUP_DEFAULT_BRIGHTNESS(x) ((200 * (x)) / 255)
+int lcd_closebl_flag = 0;
+/*
+* add for support face fill light feature
+*/
+#define TOTAL_SAVE_FFL_SIZE 2048
+
+#define FFL_LEVEL_START 2
+
+#define FFL_LEVEL_END  1200
+
+#define FFLUPRARE  6
+
+#define BACKUPRATE 6
+
+#define FFL_PENDING_END 120
+
+#define FFL_EXIT_CONTROL 0
+
+#define FFL_TRIGGLE_CONTROL 1
+
+#define FFL_EXIT_FULLY_CONTROL 2
+
+static int is_ffl_enable = FFL_EXIT_CONTROL;
+
+static int ffl_light_save [TOTAL_SAVE_FFL_SIZE] ={0};
+
+int system_backlight_target = 1199;
+
+bool ffl_trigger_finish = true;
+
+unsigned int ffl_backlight_on = 0;
+
+atomic_t ffl_pending;
+
+wait_queue_head_t ffl_wait_q;
+
+DEFINE_MUTEX(ffl_lock);
+
+static void initial_ffl_light_save(void);
+
+static int __mdss_fb_ffl_thread(void *data);
+
+static int __mdss_set_ffl_setting(int enable);
+
+static int __mdss_get_ffl_setting(void);
+
+static ssize_t mdss_get_ffl_setting(struct device *dev,
+		struct device_attribute *attr, char *buf);
+
+static ssize_t mdss_set_ffl_setting(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count);
+
+static int mdss_fb_start_ffl_thread(struct msm_fb_data_type *mfd);
+
+static void mdss_fb_stop_ffl_thread(struct msm_fb_data_type *mfd);
+#endif /* VENDOR_EDIT */
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -92,6 +155,12 @@ static u32 mdss_fb_pseudo_palette[16] = {
 };
 
 static struct msm_mdp_interface *mdp_instance;
+
+#ifdef ODM_WT_EDIT
+int g_shutdown_pending = 0;
+int g_gesture = 0;
+#endif
+
 
 static int mdss_fb_register(struct msm_fb_data_type *mfd);
 static int mdss_fb_open(struct fb_info *info, int user);
@@ -277,16 +346,86 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 
 static int lcd_backlight_registered;
 
+#ifdef ODM_WT_EDIT
+#else /* ODM_WT_EDIT */
+static void wt_mdss_bright_to_backlight_map(u64 *values, struct msm_fb_data_type *mfd)
+{
+	int value_temp, value_a, value_b;
+	u64 backup_value = *values;
+
+	if ( backup_value > 2042) {
+		return ;
+	}
+	if ( backup_value > 0) {
+		pr_debug(" %s  value %lld \n", __func__, backup_value);
+
+		if (mfd->panel_info->blmap){
+			if (backup_value%32 > 0)
+				value_temp = backup_value/32 + 1;
+			else
+				value_temp = backup_value/32;
+
+			value_temp = value_temp - 1;
+			value_a = mfd->panel_info->blmap[value_temp*2];
+			value_b = mfd->panel_info->blmap[value_temp*2 + 1];
+
+			if (backup_value <= 383)
+				backup_value = value_a*backup_value/100 + value_b/10;
+			else
+				backup_value = value_a*backup_value/100 - value_b/10;
+
+			pr_debug(" %s value_a %d   value_b %d value_temp %d value %lld\n", __func__, value_a, value_b, value_temp, backup_value);
+		}
+
+	if (backup_value < mfd->panel_info->bl_min)
+		backup_value = mfd->panel_info->bl_min;
+	*values = backup_value;
+	}
+	return ;
+}
+
+#endif /* ODM_WT_EDIT */
+
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
 {
 	struct msm_fb_data_type *mfd = dev_get_drvdata(led_cdev->dev->parent);
 	u64 bl_lvl;
 
+#ifdef ODM_WT_EDIT
+	int value_temp, value_a, value_b;
+#endif /* ODM_WT_EDIT */
+
 	if (mfd->boot_notification_led) {
 		led_trigger_event(mfd->boot_notification_led, 0);
 		mfd->boot_notification_led = NULL;
 	}
+
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
+if ( value > 0) {
+	pr_debug(" %s  value %d \n", __func__, value);
+	if (mfd->panel_info->blmap){
+		if (value%32 > 0)
+			value_temp = value/32 + 1;
+		else
+			value_temp = value/32;
+
+		value_temp = value_temp - 1;
+		value_a = mfd->panel_info->blmap[value_temp*2];
+		value_b = mfd->panel_info->blmap[value_temp*2 + 1];
+
+		if (value <= 383)
+			value = value_a*value/100 + value_b/10;
+		else
+			value = value_a*value/100 - value_b/10;
+		pr_debug(" %s value_a %d   value_b %d value_temp %d value %d\n", __func__, value_a, value_b, value_temp, value);
+	}
+
+	if (value < mfd->panel_info->bl_min)
+		value = mfd->panel_info->bl_min;
+}
+#endif /* ODM_WT_EDIT */
 
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
@@ -294,17 +433,56 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	/* This maps android backlight level 0 to 255 into
 	 * driver backlight level 0 to bl_max with rounding
 	 */
+#ifdef ODM_WT_EDIT
 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 				mfd->panel_info->brightness_max);
+#else /* ODM_WT_EDIT */
+	bl_lvl = value;
+	wt_mdss_bright_to_backlight_map(&bl_lvl, mfd);
+	pr_debug(" %s  value after %lld \n", __func__, bl_lvl);
+#endif /* ODM_WT_EDIT */
+
+
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
 
 	if (!IS_CALIB_MODE_BL(mfd) && (!mfd->ext_bl_ctrl || !value ||
 							!mfd->bl_level)) {
+		#ifndef VENDOR_EDIT
+		/*
+		* add for support face fill light feature
+		*/
 		mutex_lock(&mfd->bl_lock);
 		mdss_fb_set_backlight(mfd, bl_lvl);
 		mutex_unlock(&mfd->bl_lock);
+		#else
+		if (bl_lvl > 0) {
+			ffl_backlight_on = 1;
+		} else {
+			ffl_backlight_on = 0;
+		}
+		system_backlight_target = bl_lvl;
+		if (system_backlight_target >= 2047) {
+			system_backlight_target = 2047;
+		} else if (system_backlight_target <= 0) {
+			system_backlight_target = 0;
+		}
+		if (ffl_trigger_finish) {
+			if (is_ffl_enable != FFL_TRIGGLE_CONTROL) {
+				mutex_lock(&mfd->bl_lock);
+				mdss_fb_set_backlight(mfd, bl_lvl);
+				mutex_unlock(&mfd->bl_lock);
+			}
+			if ((is_ffl_enable == FFL_TRIGGLE_CONTROL) && (bl_lvl > 0)) {
+				mutex_lock(&ffl_lock);
+				atomic_inc(&ffl_pending);
+				wake_up_all(&ffl_wait_q);
+				mutex_unlock(&ffl_lock);
+			}
+		}
+		pr_debug("mdss_fb_set_bl_brightness 1 bl_lvl =%d\n",system_backlight_target);
+		#endif /*VENDOR_EDIT*/
 	}
 }
 
@@ -905,6 +1083,226 @@ static ssize_t mdss_fb_get_persist_mode(struct device *dev,
 	return ret;
 }
 
+#ifdef VENDOR_EDIT
+/*
+* add for lcd driver
+*/
+extern int set_cabc(int level);
+extern int cabc_mode;
+static ssize_t mdss_get_cabc(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+
+    printk(KERN_INFO "get cabc mode = %d\n",cabc_mode);
+
+    return sprintf(buf, "%d\n", cabc_mode);
+}
+
+static ssize_t mdss_set_cabc(struct device *dev,
+                               struct device_attribute *attr,
+                               const char *buf, size_t count)
+{
+    int level = 0;
+
+    sscanf(buf, "%du", &level);
+    pr_info("%s cabc level = %d\n", __func__, level);
+    set_cabc(level);
+    return count;
+}
+
+/*
+* add for silence and sau mode
+*/
+static ssize_t mdss_get_closebl_flag(struct device *dev,
+                                struct device_attribute *attr, char *buf)
+{
+    printk(KERN_INFO "get closebl flag = %d\n",lcd_closebl_flag);
+    return sprintf(buf, "%d\n", lcd_closebl_flag);
+}
+
+static ssize_t mdss_set_closebl_flag(struct device *dev,
+                               struct device_attribute *attr,
+                               const char *buf, size_t count)
+{
+    int closebl = 0;
+    sscanf(buf, "%du", &closebl);
+    pr_err("lcd_closebl_flag = %d\n",closebl);
+    if (1 != closebl)
+        lcd_closebl_flag = 0;
+    pr_err("mdss_set_closebl_flag = %d\n",lcd_closebl_flag);
+    return count;
+}
+
+/*
+* add for support face fill light feature
+*/
+extern bool flag_lcd_off;
+int __mdss_set_ffl_setting(int enable) {
+		mutex_lock(&ffl_lock);
+		if(enable != is_ffl_enable) {
+			pr_debug("__mdss_set_ffl_setting need change is_ffl_enable\n");
+			is_ffl_enable = enable;
+			if((flag_lcd_off == false) && (is_ffl_enable == FFL_TRIGGLE_CONTROL)
+				&& (ffl_backlight_on == 1)) {
+				atomic_inc(&ffl_pending);
+				wake_up_all(&ffl_wait_q);
+			}
+		}
+		mutex_unlock(&ffl_lock);
+		return 0;
+}
+
+int __mdss_get_ffl_setting(void) {
+	return is_ffl_enable;
+}
+
+static ssize_t mdss_get_ffl_setting(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	printk(KERN_INFO "mdss_get_ffl_setting = %d\n",__mdss_get_ffl_setting());
+
+	return sprintf(buf, "%d\n", __mdss_get_ffl_setting());
+}
+
+static ssize_t mdss_set_ffl_setting(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	int ffl_temp_save = 0;
+
+	sscanf(buf, "%du", &ffl_temp_save);
+	printk(KERN_INFO "%s mdss_set_ffl_setting = %d\n", __func__, ffl_temp_save);
+
+	__mdss_set_ffl_setting(ffl_temp_save);
+	return count;
+}
+
+static void initial_ffl_light_save(void) {
+	int index =0;
+	for(index =0; index < TOTAL_SAVE_FFL_SIZE; index++) {
+		ffl_light_save[index] = index;
+	}
+}
+
+static int __mdss_fb_ffl_thread(void *data)
+{
+	struct msm_fb_data_type *mfd = data;
+	int ret=0;
+	int index =0;
+	int pending =0;
+	//add for support ffl feature better, solve bug:1208496
+	struct sched_param param;
+	param.sched_priority = 16;
+	ret = sched_setscheduler_nocheck(current, SCHED_FIFO, &param);
+	if (ret)
+		pr_err("%s: set priority failed\n", __func__);
+
+	while (1) {
+		wait_event(ffl_wait_q,
+				(atomic_read(&ffl_pending) ||
+				 kthread_should_stop()));
+
+		if (kthread_should_stop())
+			break;
+		atomic_set(&ffl_pending, 0);
+		ffl_trigger_finish = false;
+		for (index = FFL_LEVEL_START; index < FFL_LEVEL_END; index = index + FFLUPRARE) {
+			if ((is_ffl_enable != FFL_TRIGGLE_CONTROL)
+				|| (system_backlight_target == 0)) {
+				break;
+			} else if (is_ffl_enable == FFL_TRIGGLE_CONTROL) {
+				mutex_lock(&mfd->bl_lock);
+				mdss_fb_set_backlight(mfd, ffl_light_save[index]);
+				mutex_unlock(&mfd->bl_lock);
+				mdelay(6);
+			}
+		}
+
+		//add for support ffl feature, ffl need to pending about 1s at here
+		for(pending =0; pending <= FFL_PENDING_END; pending++)
+		{
+			if ((is_ffl_enable != FFL_TRIGGLE_CONTROL)
+				|| (system_backlight_target == 0)) {
+				break;
+			} else if (is_ffl_enable == FFL_TRIGGLE_CONTROL) {
+				mdelay(8);
+			}
+		}
+
+		if(index < system_backlight_target) {
+			for(index = index; index < system_backlight_target; index =index + BACKUPRATE) {
+				if ((is_ffl_enable == FFL_EXIT_FULLY_CONTROL)
+					|| (system_backlight_target == 0)) {
+					break;
+				} else if ((is_ffl_enable ==FFL_EXIT_CONTROL)||(is_ffl_enable ==FFL_TRIGGLE_CONTROL)) {
+					mutex_lock(&mfd->bl_lock);
+					mdss_fb_set_backlight(mfd, ffl_light_save[index]);
+					mutex_unlock(&mfd->bl_lock);
+					mdelay(6);
+				}
+			}
+		} else if (index > system_backlight_target) {
+			for(index =index; index > system_backlight_target; index =index - BACKUPRATE) {
+				if ((is_ffl_enable == FFL_EXIT_FULLY_CONTROL)
+					|| (system_backlight_target == 0)) {
+					break;
+				} else if ((is_ffl_enable ==FFL_EXIT_CONTROL)||(is_ffl_enable ==FFL_TRIGGLE_CONTROL)) {
+					mutex_lock(&mfd->bl_lock);
+					mdss_fb_set_backlight(mfd, ffl_light_save[index]);
+					mutex_unlock(&mfd->bl_lock);
+					mdelay(6);
+				}
+			}
+		}
+
+		mutex_lock(&mfd->bl_lock);
+		mdss_fb_set_backlight(mfd, system_backlight_target);
+		mutex_unlock(&mfd->bl_lock);
+
+		ffl_trigger_finish = true;
+
+		__mdss_set_ffl_setting(FFL_EXIT_CONTROL);
+	}
+
+	atomic_set(&ffl_pending, 0);
+
+	return ret;
+}
+
+static int mdss_fb_start_ffl_thread(struct msm_fb_data_type *mfd)
+{
+	int ret = 0;
+	pr_debug("%pS: mdss_fb_start_ffl_thread fb%d\n",
+		__builtin_return_address(0), mfd->index);
+
+	atomic_set(&ffl_pending, 0);
+	mfd->ffl_thread= kthread_run(__mdss_fb_ffl_thread,
+				mfd, "mdss_fb_ffl%d", mfd->index);
+
+	if (IS_ERR(mfd->ffl_thread)) {
+		pr_err("ERROR: unable to start mdss_fb_start_ffl_thread %d\n",
+				mfd->index);
+		ret = PTR_ERR(mfd->ffl_thread);
+		mfd->ffl_thread = NULL;
+	}
+	return ret;
+}
+
+static void mdss_fb_stop_ffl_thread(struct msm_fb_data_type *mfd)
+{
+	pr_debug("%pS: mdss_fb_stop_ffl_thread fb%d\n",
+		__builtin_return_address(0), mfd->index);
+
+	//add for support ffl feature, let __mdss_fb_ffl_thread stop asap
+	mutex_lock(&ffl_lock);
+	is_ffl_enable = FFL_EXIT_FULLY_CONTROL;
+	mutex_unlock(&ffl_lock);
+
+	kthread_stop(mfd->ffl_thread);
+	mfd->ffl_thread = NULL;
+}
+#endif
+
 static ssize_t mdss_fb_idle_pc_notify(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -931,6 +1329,20 @@ static DEVICE_ATTR(measured_fps, 0664,
 	mdss_fb_get_fps_info, NULL);
 static DEVICE_ATTR(msm_fb_persist_mode, 0644,
 	mdss_fb_get_persist_mode, mdss_fb_change_persist_mode);
+#ifdef VENDOR_EDIT
+/*
+* add for lcd driver
+*/
+static DEVICE_ATTR(cabc, S_IRUGO|S_IWUSR, mdss_get_cabc, mdss_set_cabc);
+/*
+* add for silence and sau mode
+*/
+static DEVICE_ATTR(closebl, 0664, mdss_get_closebl_flag, mdss_set_closebl_flag);
+/*
+* add for support face fill light feature
+*/
+static DEVICE_ATTR(ffl_set, S_IRUGO|S_IWUSR, mdss_get_ffl_setting, mdss_set_ffl_setting);
+#endif
 static DEVICE_ATTR(idle_power_collapse, 0444, mdss_fb_idle_pc_notify, NULL);
 
 static struct attribute *mdss_fb_attrs[] = {
@@ -946,6 +1358,20 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_dfps_mode.attr,
 	&dev_attr_measured_fps.attr,
 	&dev_attr_msm_fb_persist_mode.attr,
+	#ifdef VENDOR_EDIT
+	/*
+	* add for lcd driver
+	*/
+	&dev_attr_cabc.attr,
+	/*
+	* add for silence and sau mode
+	*/
+	&dev_attr_closebl.attr,
+	/*
+	* add for support face fill light feature
+	*/
+	&dev_attr_ffl_set.attr,
+	#endif
 	&dev_attr_idle_power_collapse.attr,
 	NULL,
 };
@@ -974,6 +1400,9 @@ static void mdss_fb_shutdown(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
 
 	mfd->shutdown_pending = true;
+#ifdef ODM_WT_EDIT
+	g_shutdown_pending = 1;
+#endif
 
 	/* wake up threads waiting on idle or kickoff queues */
 	wake_up_all(&mfd->idle_wait_q);
@@ -1277,11 +1706,25 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	mfd->mdp_fb_page_protection = MDP_FB_PAGE_PROTECTION_WRITECOMBINE;
 
 	mfd->ext_ad_ctrl = -1;
+
+	#ifndef VENDOR_EDIT
+	/*
+	* modify for lcd happen esd set backlight 127 before set system backlight
+	*/
 	if (mfd->panel_info && mfd->panel_info->brightness_max > 0)
 		MDSS_BRIGHT_TO_BL(mfd->bl_level, backlight_led.brightness,
 		mfd->panel_info->bl_max, mfd->panel_info->brightness_max);
 	else
 		mfd->bl_level = 0;
+	#else
+	if (mfd->panel_info && mfd->panel_info->brightness_max > 0) {
+		MDSS_BRIGHT_TO_BL(mfd->bl_level, backlight_led.brightness,
+		mfd->panel_info->bl_max, mfd->panel_info->brightness_max);
+		mfd->bl_level = OPPO_BOOTUP_DEFAULT_BRIGHTNESS(mfd->panel_info->bl_max);
+	} else {
+		mfd->bl_level = 0;
+	}
+	#endif /*VEDNOR_EDIT*/
 
 	mfd->bl_scale = 1024;
 	mfd->bl_min_lvl = 30;
@@ -1405,6 +1848,17 @@ static int mdss_fb_probe(struct platform_device *pdev)
 			pr_err("failed to register input handler\n");
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
+
+	#ifdef VENDOR_EDIT
+	/*
+	* add for silence and sau mode
+	*/
+	if ((MSM_BOOT_MODE__SILENCE == get_boot_mode())
+		|| (MSM_BOOT_MODE__SAU == get_boot_mode())) {
+		pr_debug("lcd_closebl_flag = 1\n");
+		lcd_closebl_flag = 1;
+	}
+	#endif /* VENDOR_EDIT */
 
 	return rc;
 }
@@ -1906,12 +2360,23 @@ static int mdss_fb_blank_blank(struct msm_fb_data_type *mfd,
 
 	mfd->op_enable = false;
 	if (mdss_panel_is_power_off(req_power_state)) {
+	#ifdef VENDOR_EDIT
+	/*
+	* add for support face fill light feature
+	*/
+		if (mfd->ffl_thread)
+			mdss_fb_stop_ffl_thread(mfd);
+	#endif /*VENDOR_EDIT*/
+
 		/* Stop Display thread */
 		if (mfd->disp_thread)
 			mdss_fb_stop_disp_thread(mfd);
 		mutex_lock(&mfd->bl_lock);
 		current_bl = mfd->bl_level;
 		mfd->allow_bl_update = true;
+		#ifdef ODM_WT_EDIT
+		pr_info("LCD_LOG : %s: mdss_fb_set_backlight(0)\n", __func__);
+		#endif
 		mdss_fb_set_backlight(mfd, 0);
 		mfd->allow_bl_update = false;
 		mfd->unset_bl_level = current_bl;
@@ -1950,6 +2415,17 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 		if (IS_ERR_VALUE((unsigned long)ret))
 			return ret;
 	}
+
+	#ifdef VENDOR_EDIT
+	/*
+	* add for support face fill light feature
+	*/
+	if (mfd->ffl_thread == NULL) {
+		ret = mdss_fb_start_ffl_thread(mfd);
+		if (IS_ERR_VALUE((unsigned long)ret))
+			return ret;
+	}
+	#endif /*VENDOR_EDIT*/
 
 	cur_power_state = mfd->panel_power_state;
 	pr_debug("Transitioning from %d --> %d\n", cur_power_state,
@@ -2002,10 +2478,20 @@ static int mdss_fb_blank_unblank(struct msm_fb_data_type *mfd)
 			 * Hence resetting back to calibration mode value
 			 */
 			if (IS_CALIB_MODE_BL(mfd))
+			{
+				#ifdef ODM_WT_EDIT
+				pr_info("LCD_LOG : %s: mdss_fb_set_backlight(%d)\n", __func__, mfd->calib_mode_bl);
+				#endif
 				mdss_fb_set_backlight(mfd, mfd->calib_mode_bl);
+			}
 			else if ((!mfd->panel_info->mipi.post_init_delay) &&
 				(mfd->unset_bl_level != U32_MAX))
+			{
+				#ifdef ODM_WT_EDIT
+				pr_info("LCD_LOG : %s: mdss_fb_set_backlight(%d)\n", __func__, mfd->unset_bl_level);
+				#endif
 				mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+			}
 
 			/*
 			 * it blocks the backlight update between unblank and
@@ -2117,13 +2603,20 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	int ret;
 	struct mdss_panel_data *pdata;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-
+	#ifdef VENDOR_EDIT
+	struct mdss_data_type *mdata;
+	#endif
 	ret = mdss_fb_pan_idle(mfd);
 	if (ret) {
 		pr_warn("mdss_fb_pan_idle for fb%d failed. ret=%d\n",
 			mfd->index, ret);
 		return ret;
 	}
+
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s blank_mode = %d, +++\n", __func__, blank_mode);
+#endif
+
 	mutex_lock(&mfd->mdss_sysfs_lock);
 	if (mfd->op_enable == 0) {
 		if (blank_mode == FB_BLANK_UNBLANK)
@@ -2138,6 +2631,11 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 		goto end;
 	}
 	pr_debug("mode: %d\n", blank_mode);
+
+	#ifdef VENDOR_EDIT
+	mdata = mfd_to_mdata(mfd);
+	mdata->scm_set_allowable = false;
+	#endif
 
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
@@ -2154,6 +2652,11 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 
 end:
 	mutex_unlock(&mfd->mdss_sysfs_lock);
+
+#ifdef ODM_WT_EDIT
+	pr_info("LCD_LOG : %s blank_mode = %d, ---\n", __func__, blank_mode);
+#endif
+
 	return ret;
 }
 
@@ -2766,6 +3269,15 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	init_waitqueue_head(&mfd->ioctl_q);
 	init_waitqueue_head(&mfd->kickoff_wait_q);
 
+	#ifdef VENDOR_EDIT
+	/*
+	* add for support face fill light feature
+	*/
+	atomic_set(&ffl_pending, 0);
+	init_waitqueue_head(&ffl_wait_q);
+	initial_ffl_light_save();
+	#endif /*VENDOR_EDIT*/
+
 	ret = fb_alloc_cmap(&fbi->cmap, 256, 0);
 	if (ret)
 		pr_err("fb_alloc_cmap() failed!\n");
@@ -2792,6 +3304,10 @@ static int mdss_fb_open(struct fb_info *info, int user)
 	struct mdss_fb_file_info *file_info = NULL;
 	int result;
 	struct task_struct *task = current->group_leader;
+	#ifdef ODM_WT_EDIT
+	//Tianchen.Zhao@ODM_RH.Display Porting
+	g_shutdown_pending = 0;
+	#endif
 
 	if (mfd->shutdown_pending) {
 		pr_err_once("Shutdown pending. Aborting operation. Request from pid:%d name=%s\n",
@@ -2845,6 +3361,9 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 	int ret = 0;
 	bool node_found = false;
 	struct task_struct *task = current->group_leader;
+#ifdef ODM_WT_EDIT
+	g_shutdown_pending = 1;
+#endif
 
 	if (!mfd->ref_cnt) {
 		pr_info("try to close unopened fb %d! from pid:%d name:%s\n",

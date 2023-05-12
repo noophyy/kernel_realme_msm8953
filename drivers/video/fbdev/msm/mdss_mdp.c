@@ -1716,7 +1716,12 @@ static inline int mdss_mdp_irq_clk_register(struct mdss_data_type *mdata,
 static void __mdss_restore_sec_cfg(struct mdss_data_type *mdata)
 {
 	int ret, scm_ret = 0;
-
+	#ifdef VENDOR_EDIT
+	if (mdata->scm_set_allowable != true) {
+		pr_debug("%s Should not restore secure config allowable = %d\n", __func__, mdata->scm_set_allowable);
+		return;
+	}
+	#endif
 	if (test_bit(MDSS_CAPS_SCM_RESTORE_NOT_REQUIRED, mdata->mdss_caps_map))
 		return;
 

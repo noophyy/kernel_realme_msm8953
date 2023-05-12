@@ -167,6 +167,8 @@ static int fb_event_callback(struct notifier_block *self,
 	}
 
 	pdata->mfd = evdata->info->par;
+#ifndef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.Display Porting
 	if (event == FB_EVENT_BLANK) {
 		int *blank = evdata->data;
 		struct dsi_status_data *pdata = container_of(self,
@@ -191,6 +193,60 @@ static int fb_event_callback(struct notifier_block *self,
 			break;
 		}
 	}
+#else
+	if(event == FB_EARLY_EVENT_BLANK){
+		int *blank = evdata->data;
+		struct dsi_status_data *pdata = container_of(self,
+				struct dsi_status_data, fb_notifier);
+		pdata->mfd = evdata->info->par;
+
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_NORMAL:
+			break;
+		case FB_BLANK_POWERDOWN:
+		case FB_BLANK_HSYNC_SUSPEND:
+			#ifdef ODM_WT_EDIT
+			//Tianchen.Zhao@ODM_RH.Display Porting
+			pinfo->esd_check_running = false;
+			#endif /* ODM_WT_EDIT */
+			pr_err("%s : LCD_LOG, ESD thread stop esd_check_running %d \n", __func__, pinfo->esd_check_running);
+			cancel_delayed_work(&pdata->check_status);
+			break;
+		default:
+			pr_err("Unknown case in FB_EVENT_BLANK event\n");
+			break;
+		}
+	}else if (event == FB_EVENT_BLANK) {
+		int *blank = evdata->data;
+		struct dsi_status_data *pdata = container_of(self,
+				struct dsi_status_data, fb_notifier);
+		pdata->mfd = evdata->info->par;
+
+		switch (*blank) {
+		case FB_BLANK_UNBLANK:
+			#ifdef ODM_WT_EDIT
+			//Tianchen.Zhao@ODM_RH.Display Porting
+			pinfo->esd_check_running = true;
+			#endif /* ODM_WT_EDIT */
+			pr_err("%s : LCD_LOG, ESD thread start esd_check_running %d\n", __func__, pinfo->esd_check_running);
+			schedule_delayed_work(&pdata->check_status,
+				msecs_to_jiffies(interval));
+			break;
+		case FB_BLANK_VSYNC_SUSPEND:
+		case FB_BLANK_NORMAL:
+			pr_debug("%s : ESD thread running\n", __func__);
+			break;
+		case FB_BLANK_POWERDOWN:
+		case FB_BLANK_HSYNC_SUSPEND:
+			break;
+		default:
+			pr_err("Unknown case in FB_EVENT_BLANK event\n");
+			break;
+		}
+	}
+#endif
 	return 0;
 }
 
