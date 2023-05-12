@@ -306,6 +306,12 @@ EXPORT_SYMBOL(sysctl_tcp_delack_seg);
 int sysctl_tcp_use_userconfig __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_use_userconfig);
 
+#ifdef VENDOR_EDIT
+//add for: [monitor tcp info]
+int sysctl_tcp_info_print __read_mostly = -1;
+EXPORT_SYMBOL(sysctl_tcp_info_print);
+#endif /* VENDOR_EDIT */
+
 /*
  * Current number of TCP sockets.
  */

@@ -61,6 +61,10 @@ country AR:
 	(5490 - 5590 @ 80), (36)
 	(5650 - 5730 @ 80), (36)
 	(5735 - 5835 @ 80), (36)
+	# ifndef VENDOR_EDIT
+	# Remove for fre of AR
+	# (5735 - 5835 @ 80), (36)
+	# endif /* VENDOR_EDIT */
 	# 60 gHz band channels 1-3
 	(57240 - 63720 @ 2160), (40), NO-OUTDOOR
 
@@ -70,6 +74,10 @@ country AS: DFS-FCC
 	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
 	(5490 - 5730 @ 160), (24), DFS
 	(5735 - 5850 @ 80), (30)
+	# ifndef VENDOR_EDIT
+	# Remove for fre of AS
+	# (5735 - 5850 @ 80), (30)
+	# endif /* VENDOR_EDIT */
 
 country AT: DFS-ETSI
 	(2402 - 2482 @ 40), (20)
@@ -116,6 +124,11 @@ country BB: DFS-FCC
 
 country BD:
 	(2402 - 2482 @ 40), (20)
+	# ifdef VENDOR_EDIT
+	# Add for fre of BD
+	(5170 - 5250 @ 80), (17)
+	(5250 - 5330 @ 80), (23), DFS
+	# endif /* VENDOR_EDIT */
 	(5735 - 5835 @ 80), (30)
 
 country BE: DFS-ETSI
@@ -260,6 +273,10 @@ country CO: DFS-FCC
 	(5170 - 5250 @ 80), (24), AUTO-BW
 	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
 	(5490 - 5730 @ 160), (24), DFS
+	# ifndef VENDOR_EDIT
+	# Remove for fre of CO
+	# (5490 - 5730 @ 160), (24), DFS
+	# endif /* VENDOR_EDIT */
 	(5735 - 5835 @ 80), (30)
 
 country CR: DFS-FCC
@@ -339,6 +356,12 @@ country DZ: DFS-ETSI
 	(5170 - 5250 @ 80), (23), AUTO-BW
 	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
 	(5490 - 5670 @ 160), (23), DFS
+	# ifndef VENDOR_EDIT
+	# Modify for fre of DZ
+	# (5490 - 5670 @ 160), (23), DFS
+	# else /* VENDOR_EDIT */
+	(5490 - 5730 @ 160), (23), DFS
+	# endif /* VENDOR_EDIT */
 
 country EC: DFS-FCC
 	(2402 - 2482 @ 40), (20)
@@ -546,6 +569,11 @@ country IL: DFS-ETSI
 	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
 	# 60 gHz band channels 1-4, base on Etsi En 302 567
 	(57000 - 66000 @ 2160), (40)
+	# ifdef VENDOR_EDIT
+	# Add for fre of IL
+	(5490 - 5730 @ 80), (20)
+	(5735 - 5835 @ 80), (20)
+	# endif /* VENDOR_EDIT */
 
 country IN: DFS-ETSI
 	(2402 - 2482 @ 40), (30)
@@ -560,6 +588,12 @@ country IQ: DFS-ETSI
 	(5250 - 5330 @ 80), (23), DFS, AUTO-BW, NO-OUTDOOR
 	(5490 - 5710 @ 160), (30), DFS
 
+# ifndef VENDOR_EDIT
+# Add for fre of IR
+country IR:
+	(2402 - 2482 @ 40), (20)
+	(5735 - 5815 @ 80), (30)
+# endif /* VENDOR_EDIT */
 country IS: DFS-ETSI
 	(2402 - 2482 @ 40), (20)
 	(5170 - 5250 @ 80), (23), AUTO-BW, NO-OUTDOOR
@@ -607,6 +641,15 @@ country KE: DFS-ETSI
 	(5170 - 5250 @ 80), (23)
 	(5490 - 5570 @ 80), (30), DFS
 	(5735 - 5775 @ 40), (23)
+	# ifndef VENDOR_EDIT
+	# Modify for fre of KE
+	# (5490 - 5570 @ 80), (30), DFS
+	# (5735 - 5775 @ 40), (23)
+	# else /* VENDOR_EDIT */
+	(5250 - 5330 @ 80), (23), DFS
+	(5490 - 5730 @ 80), (24), DFS
+	(5735 - 5835 @ 40), (23)
+	# endif /* VENDOR_EDIT */
 
 country KH: DFS-ETSI
 	(2402 - 2482 @ 40), (20)
@@ -645,6 +688,13 @@ country KY: DFS-FCC
 
 country KZ:
 	(2402 - 2482 @ 40), (20)
+	# ifdef VENDOR_EDIT
+	# Add for fre of KZ
+	(5170 - 5250 @ 80), (24)
+	(5250 - 5330 @ 80), (24), DFS
+	(5490 - 5730 @ 160), (24), DFS
+	(5735 - 5835 @ 80), (30)
+	# endif /* VENDOR_EDIT */
 
 country LB: DFS-FCC
 	(2402 - 2482 @ 40), (20)
@@ -764,6 +814,14 @@ country MN: DFS-FCC
 	(5490 - 5730 @ 160), (24), DFS
 	(5735 - 5835 @ 80), (30)
 
+# ifdef VENDOR_EDIT
+# add MM for DFS-FCC
+country MM: DFS-FCC
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (17)
+	(5250 - 5330 @ 80), (24), DFS
+	(5490 - 5730 @ 80), (24), DFS
+
 country MO: DFS-FCC
 	(2402 - 2482 @ 40), (20)
 	(5170 - 5250 @ 80), (24), AUTO-BW
@@ -834,6 +892,16 @@ country MY: DFS-FCC
 	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
 	(5490 - 5650 @ 160), (24), DFS
 	(5735 - 5835 @ 80), (24)
+	# ifndef VENDOR_EDIT
+	# Remove for fre of MX
+	# (5490 - 5650 @ 160), (24), DFS
+	# endif /* VENDOR_EDIT */
+	# ifndef VENDOR_EDIT
+	# Modify for fre of MY
+	# (5735 - 5815 @ 80), (24)
+	# else /* VENDOR_EDIT */
+	(5735 - 5835 @ 80), (24)
+	# endif /* VENDOR_EDIT */
 	# 60 gHz band channels 1-3
 	(57240 - 63720 @ 2160), (40)
 
@@ -847,6 +915,11 @@ country NA: DFS-ETSI
 country NG: DFS-ETSI
 	(2402 - 2482 @ 40), (20)
 	(5250 - 5330 @ 80), (30), DFS
+	# ifdef VENDOR_EDIT
+	# Add for fre of NG
+	(5490 - 5590 @ 80), (17), DFS
+	(5590 - 5710 @ 80), (30), DFS
+	# endif /* VENDOR_EDIT */
 	(5735 - 5835 @ 80), (30)
 
 country NI: DFS-FCC
@@ -936,6 +1009,12 @@ country PH: DFS-FCC
 country PK:
 	(2402 - 2482 @ 40), (30)
 	(5735 - 5835 @ 80), (30)
+	# ifndef VENDOR_EDIT
+	# Modify for fre of PK
+	# (5735 - 5835 @ 80), (30)
+	# else /* VENDOR_EDIT */
+	(5735 - 5815 @ 80), (30)
+	# endif /* VENDOR_EDIT */
 
 country PL: DFS-ETSI
 	(2402 - 2482 @ 40), (20)
@@ -1029,6 +1108,12 @@ country RU:
 	(2402 - 2482 @ 40), (20)
 	(5170 - 5330 @ 160), (23)
 	(5490 - 5730 @ 160), (30)
+	# ifndef VENDOR_EDIT
+	# Modify for fre of RU
+	# (5490 - 5730 @ 160), (30)
+	# else /* VENDOR_EDIT */
+	(5650 - 5710 @ 40), (30), DFS
+	# endif /* VENDOR_EDIT */
 	(5735 - 5835 @ 80), (30)
 	# 60 gHz band channels 1-4
 	(57240 - 65880 @ 2160), (40)
@@ -1152,6 +1237,12 @@ country TT: DFS-FCC
 
 country TW: DFS-FCC
 	(2402 - 2472 @ 40), (30)
+	# ifndef VENDOR_EDIT
+	# Modify for fre of TW
+	# (2402 - 2472 @ 40), (30)
+	# else /* VENDOR_EDIT */
+	(2402 - 2482 @ 40), (30)
+	# endif /* VENDOR_EDIT */
 	(5170 - 5250 @ 80), (24), AUTO-BW
 	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
 	(5490 - 5730 @ 160), (24), DFS

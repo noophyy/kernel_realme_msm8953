@@ -360,8 +360,20 @@ next_hook:
 		ret = NF_DROP_GETERR(verdict);
 		if (ret == 0)
 			ret = -EPERM;
+#ifdef VENDOR_EDIT
+//Add for limit speed function
+	} else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE ||
+		   (verdict & NF_VERDICT_MASK) == NF_IMQ_QUEUE) {
+#else /* VENDOR_EDIT */
 	} else if ((verdict & NF_VERDICT_MASK) == NF_QUEUE) {
+#endif /* VENDOR_EDIT */
 		ret = nf_queue(skb, state, &entry, verdict);
+
+#ifdef VENDOR_EDIT
+//Add for limit speed function
+		if (ret == -ECANCELED)
+			goto next_hook;
+#endif /* VENDOR_EDIT */
 		if (ret == 1 && entry)
 			goto next_hook;
 	} else {
