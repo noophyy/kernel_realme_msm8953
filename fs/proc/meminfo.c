@@ -18,6 +18,9 @@
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include "internal.h"
+#ifdef VENDOR_EDIT
+#include <linux/ion.h>
+#endif /*VENDOR_EDIT*/
 
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
@@ -153,6 +156,14 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "CmaFree:        ",
 		    global_page_state(NR_FREE_CMA_PAGES));
 #endif
+
+#ifdef VENDOR_EDIT
+	show_val_kb(m, "Oppo2Free:        ",global_page_state(NR_FREE_OPPO2_PAGES));
+#endif /* VENDOR_EDIT */
+#ifdef VENDOR_EDIT
+	show_val_kb(m, "IonTotalUsed:   ", ion_total() >> PAGE_SHIFT);
+#endif /*VENDOR_EDIT*/
+
 
 	hugetlb_report_meminfo(m);
 

@@ -32,3 +32,14 @@ proc-$(CONFIG_PROC_KCORE)	+= kcore.o
 proc-$(CONFIG_PROC_VMCORE)	+= vmcore.o
 proc-$(CONFIG_PRINTK)	+= kmsg.o
 proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
+ifeq ($(ODM_WT_EDIT),yes)
+
+obj-y += oppoversion.o
+endif
+
+ifeq ($(ODM_WT_EDIT),yes)
+obj-y += devinfo.o
+endif
+#ifdef VENDOR_EDIT
+proc-$(CONFIG_OPPO_FG_OPT)	+= fg_uid.o
+#endif /* VENDOR_EDIT */

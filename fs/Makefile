@@ -130,3 +130,8 @@ obj-y				+= exofs/ # Multiple modules
 obj-$(CONFIG_CEPH_FS)		+= ceph/
 obj-$(CONFIG_PSTORE)		+= pstore/
 obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
+
+#ifdef ODM_WT_EDIT
+obj-$(CONFIG_EXFAT_FS)		+= exfat/
+#endif /*ODM_WT_EDIT*/
+

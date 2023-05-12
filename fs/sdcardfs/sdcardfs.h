@@ -114,6 +114,10 @@ typedef enum {
 	PERM_ANDROID_PACKAGE,
 	/* This node is "/Android/[data|media|obb]/[package]/cache" */
 	PERM_ANDROID_PACKAGE_CACHE,
+#ifdef VENDOR_EDIT
+	/* This node is "/DCIM" */
+	PERM_DCIM,
+#endif /* VENDOR_EDIT */
 } perm_t;
 
 struct sdcardfs_sb_info;
@@ -167,6 +171,10 @@ struct sdcardfs_inode_data {
 	bool under_android;
 	bool under_cache;
 	bool under_obb;
+#ifdef VENDOR_EDIT
+	bool under_dcim;
+	uid_t dcim_uid;
+#endif /* VENDOR_EDIT */
 };
 
 /* sdcardfs inode data in memory */
@@ -648,5 +656,10 @@ static inline bool qstr_case_eq(const struct qstr *q1, const struct qstr *q2)
 }
 
 #define QSTR_LITERAL(string) QSTR_INIT(string, sizeof(string)-1)
+
+#ifdef VENDOR_EDIT
+int dcim_delete_uevent(struct dentry *dentry);
+int dcim_delete_skip(void);
+#endif /* VENDOR_EDIT */
 
 #endif	/* not _SDCARDFS_H_ */
