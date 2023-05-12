@@ -130,6 +130,7 @@ config ARM64
 	select SYSCTL_EXCEPTION_TRACE
 	select THREAD_INFO_IN_TASK
 	select ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+	select ARCH_MSM8953_SOC_SETTINGS
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
@@ -237,6 +238,18 @@ config NEED_DMA_MAP_STATE
 	def_bool y
 
 config NEED_SG_DMA_LENGTH
+	def_bool y
+
+config OPPO_ROOT_CHECK
+	def_bool y
+
+config OPPO_KEVENT_UPLOAD
+	def_bool y
+
+config OPPO_EXECVE_BLOCK
+	def_bool y
+
+config OPPO_EXECVE_REPORT
 	def_bool y
 
 config SMP
@@ -1264,6 +1277,15 @@ config ARCH_HIBERNATION_HEADER
 
 config ARCH_SUSPEND_POSSIBLE
 	def_bool y
+	
+config ARCH_MSM8953_SOC_SETTINGS
+	bool "Enable MSM8953 SOC settings"
+	depends on ARCH_MSM8953
+	help
+	  Enable generic MSM8953 related settings which are required for
+	  some of CPUSS sub-system functionality.
+
+	  If you are not sure what to do, select 'N' here.
 
 endmenu
 
