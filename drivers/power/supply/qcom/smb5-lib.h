@@ -27,6 +27,9 @@ enum print_reason {
 	PR_MISC		= BIT(2),
 	PR_PARALLEL	= BIT(3),
 	PR_OTG		= BIT(4),
+#ifdef ODM_WT_EDIT
+	PR_OTHERS	= BIT(5),
+#endif /* ODM_WT_EDIT */
 };
 
 #define DEFAULT_VOTER			"DEFAULT_VOTER"
@@ -67,8 +70,18 @@ enum print_reason {
 #define PL_FCC_LOW_VOTER		"PL_FCC_LOW_VOTER"
 #define WBC_VOTER			"WBC_VOTER"
 #define HW_LIMIT_VOTER			"HW_LIMIT_VOTER"
+#define DYNAMIC_RP_VOTER		"DYNAMIC_RP_VOTER"
+#define DEFAULT_100MA_VOTER		"DEFAULT_100MA_VOTER"
 #define FORCE_RECHARGE_VOTER		"FORCE_RECHARGE_VOTER"
+#ifdef ODM_WT_EDIT
+#define FB_BLANK_VOTER			"FB_BLANK_VOTER"
+#define CHG_CHK_VOTER			"CHG_CHK_VOTER"
+#define CALL_VOTER				"CALL_VOTER"
+#define JEITA_VOTER				"JEITA_VOTER"
+#endif /* ODM_WT_EDIT */
+#ifdef ODM_WT_EDIT
 #define AICL_THRESHOLD_VOTER		"AICL_THRESHOLD_VOTER"
+#endif
 #define MOISTURE_VOTER			"MOISTURE_VOTER"
 #define USBOV_DBC_VOTER			"USBOV_DBC_VOTER"
 #define FCC_STEPPER_VOTER		"FCC_STEPPER_VOTER"
@@ -81,8 +94,13 @@ enum print_reason {
 
 #define SDP_100_MA			100000
 #define SDP_CURRENT_UA			500000
+#ifndef ODM_WT_EDIT
 #define CDP_CURRENT_UA			1500000
 #define DCP_CURRENT_UA			1500000
+#else
+#define CDP_CURRENT_UA			500000
+#define DCP_CURRENT_UA			2000000
+#endif
 #define HVDCP_CURRENT_UA		3000000
 #define TYPEC_DEFAULT_CURRENT_UA	900000
 #define TYPEC_MEDIUM_CURRENT_UA		1500000
@@ -315,6 +333,9 @@ struct smb_charger {
 	struct power_supply		*batt_psy;
 	struct power_supply		*usb_psy;
 	struct power_supply		*dc_psy;
+#ifdef ODM_WT_EDIT
+	struct power_supply		*ac_psy;
+#endif /* ODM_WT_EDIT */
 	struct power_supply		*bms_psy;
 	struct power_supply		*usb_main_psy;
 	struct power_supply		*usb_port_psy;
@@ -358,6 +379,15 @@ struct smb_charger {
 
 	/* alarm */
 	struct alarm		moisture_protection_alarm;
+	#ifdef ODM_WT_EDIT
+#ifdef __WT_BATTERY_CHARGER_LOG_OUTPUT__
+	struct delayed_work	log_output_work;
+	struct class 		log_output_class;
+#endif
+	struct notifier_block	fb_notif;
+	struct delayed_work	charger_monitor_work;
+	struct task_struct *tbatt_pwroff_task;
+#endif /* ODM_WT_EDIT */
 	struct alarm		chg_termination_alarm;
 
 	/* pd */
@@ -398,6 +428,9 @@ struct smb_charger {
 	bool			otg_present;
 	int			hw_max_icl_ua;
 	int			auto_recharge_soc;
+	#ifdef ODM_WT_EDIT
+	int			auto_recharge_mv;
+	#endif /* ODM_WT_EDIT */
 	bool			jeita_configured;
 	enum sink_src_mode	sink_src_mode;
 	bool			hw_die_temp_mitigation;
@@ -437,6 +470,23 @@ struct smb_charger {
 	u32			headroom_mode;
 	bool			flash_init_done;
 	bool			flash_active;
+#ifdef ODM_WT_EDIT
+	int usb_id_gpio;
+	int usb_id_irq;
+	bool otg_switch;
+#endif /* ODM_WT_EDIT */
+#ifdef ODM_WT_EDIT
+	int notify_code;
+	unsigned long charger_times;
+	int call_mode;
+	int ui_soc;
+	int prop_status;
+	unsigned long sleep_tm_sec;
+#endif /* ODM_WT_EDIT */
+#ifdef ODM_WT_EDIT
+	bool         usb_online_status;
+#endif /* ODM_WT_EDIT*/
+
 };
 
 int smblib_read(struct smb_charger *chg, u16 addr, u8 *val);
@@ -476,6 +526,9 @@ int smblib_vconn_regulator_disable(struct regulator_dev *rdev);
 int smblib_vconn_regulator_is_enabled(struct regulator_dev *rdev);
 
 irqreturn_t default_irq_handler(int irq, void *data);
+#ifdef ODM_WT_EDIT
+irqreturn_t default_irq_handler_nolog(int irq, void *data);
+#endif /* ODM_WT_EDIT */
 irqreturn_t chg_state_change_irq_handler(int irq, void *data);
 irqreturn_t batt_temp_changed_irq_handler(int irq, void *data);
 irqreturn_t batt_psy_changed_irq_handler(int irq, void *data);
@@ -512,6 +565,16 @@ int smblib_get_prop_system_temp_level_max(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblib_get_prop_input_current_limited(struct smb_charger *chg,
 				union power_supply_propval *val);
+int smblib_get_prop_batt_temp(struct smb_charger *chg,
+				union power_supply_propval *val);
+#ifdef ODM_WT_EDIT
+int smblib_get_prop_batt_authenticate(struct smb_charger *chg,
+				     union power_supply_propval *val);
+int smblib_get_prop_batt_fcc(struct smb_charger *chg,
+				     union power_supply_propval *val);
+int smblib_get_prop_batt_cc(struct smb_charger *chg,
+				     union power_supply_propval *val);
+#endif /* ODM_WT_EDIT */
 int smblib_set_prop_input_suspend(struct smb_charger *chg,
 				const union power_supply_propval *val);
 int smblib_set_prop_batt_capacity(struct smb_charger *chg,
@@ -596,4 +659,29 @@ int smblib_icl_override(struct smb_charger *chg, bool override);
 
 int smblib_init(struct smb_charger *chg);
 int smblib_deinit(struct smb_charger *chg);
+
+#ifdef VENDOR_EDIT
+/* Yichun.Chen  PSW.BSP.CHG  2018-06-28  avoid flash current ripple when flash work */
+int smblib_set_opt_switcher_freq(struct smb_charger *chg, int fsw_khz);
+#endif
+
+#ifdef ODM_WT_EDIT
+#ifdef __WT_BATTERY_CHARGER_LOG_OUTPUT__
+int init_fg_chg_work(struct smb_charger *chg);
+int deinit_fg_chg_work(struct smb_charger *chg);
+#endif
+int init_chg_monitor_work(struct smb_charger *chg);
+int deinit_chg_monitor_work(struct smb_charger *chg);
+void wake_chg_monitor_work(struct smb_charger *chg, int ms);
+int get_charger_timeout(struct smb_charger *chg);
+void update_chg_monitor_statu(struct smb_charger *chg);
+void update_charger_notify_code(struct smb_charger *chg);
+int get_rtc_time(unsigned long *rtc_time);
+int do_charger_icl(struct smb_charger *chg);
+void reset_charge_modify_setting(struct smb_charger *chg, int chg_triggle);
+void set_icl_flags(struct smb_charger *chg, int val);
+int get_battery_status_modify(struct smb_charger *chg);
+#endif /* ODM_WT_EDIT */
+
+
 #endif /* __SMB5_CHARGER_H */

@@ -107,6 +107,11 @@ static ssize_t power_supply_show_property(struct device *dev,
 	if (off == POWER_SUPPLY_PROP_STATUS)
 		return scnprintf(buf, PAGE_SIZE, "%s\n",
 				status_text[value.intval]);
+#ifdef ODM_WT_EDIT
+	else if (off == POWER_SUPPLY_PROP_REAL_STATUS)
+		return scnprintf(buf, PAGE_SIZE, "%s\n",
+				status_text[value.intval]);
+#endif /* ODM_WT_EDIT */
 	else if (off == POWER_SUPPLY_PROP_CHARGE_TYPE)
 		return scnprintf(buf, PAGE_SIZE, "%s\n",
 				charge_type[value.intval]);
@@ -312,6 +317,29 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(ctm_current_max),
 	POWER_SUPPLY_ATTR(hw_current_max),
 	POWER_SUPPLY_ATTR(real_type),
+	#ifdef ODM_WT_EDIT
+	POWER_SUPPLY_ATTR(StopCharging_Test),
+	POWER_SUPPLY_ATTR(StartCharging_Test),
+	#endif /* ODM_WT_EDIT */
+	#ifdef ODM_WT_EDIT
+	POWER_SUPPLY_ATTR(adapter_fw_update),
+	POWER_SUPPLY_ATTR(authenticate),
+	POWER_SUPPLY_ATTR(batt_cc),
+	POWER_SUPPLY_ATTR(batt_fcc),
+	POWER_SUPPLY_ATTR(batt_rm),
+	POWER_SUPPLY_ATTR(batt_soh),
+	POWER_SUPPLY_ATTR(charge_technology),
+	POWER_SUPPLY_ATTR(charge_timeout),
+	POWER_SUPPLY_ATTR(chargerid_volt),
+	POWER_SUPPLY_ATTR(fastcharger),
+	POWER_SUPPLY_ATTR(mmi_charging_enable),
+	POWER_SUPPLY_ATTR(voocchg_ing),
+	POWER_SUPPLY_ATTR(notify_code),
+	POWER_SUPPLY_ATTR(call_mode),
+	POWER_SUPPLY_ATTR(soc_notify_ready),
+	POWER_SUPPLY_ATTR(ui_soc),
+	POWER_SUPPLY_ATTR(real_status),
+	#endif /* ODM_WT_EDIT */
 	POWER_SUPPLY_ATTR(pr_swap),
 	POWER_SUPPLY_ATTR(cc_step),
 	POWER_SUPPLY_ATTR(cc_step_sel),
@@ -340,6 +368,13 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(soh),
 	POWER_SUPPLY_ATTR(qc_opti_disable),
 	POWER_SUPPLY_ATTR(fcc_stepper_enable),
+	#ifdef ODM_WT_EDIT
+	POWER_SUPPLY_ATTR(otg_switch),
+	POWER_SUPPLY_ATTR(otg_online),
+	#endif /* ODM_WT_EDIT */
+	#ifdef ODM_WT_EDIT
+	POWER_SUPPLY_ATTR(recharge_uv),
+	#endif /* ODM_WT_EDIT */
 	POWER_SUPPLY_ATTR(cc_soc),
 	POWER_SUPPLY_ATTR(qg_vbms_mode),
 	/* Local extensions of type int64_t */
@@ -446,7 +481,11 @@ int power_supply_uevent(struct device *dev, struct kobj_uevent_env *env)
 	for (j = 0; j < psy->desc->num_properties; j++) {
 		struct device_attribute *attr;
 		char *line;
-
+		#ifdef ODM_WT_EDIT
+		if ((psy->desc->properties[j] == POWER_SUPPLY_PROP_STOPCHARGING_TEST)
+			|| (psy->desc->properties[j] == POWER_SUPPLY_PROP_STARTCHARGING_TEST))
+			continue;
+		#endif /* ODM_WT_EDIT */
 		attr = &power_supply_attrs[psy->desc->properties[j]];
 
 		ret = power_supply_show_property(dev, attr, prop_buf);

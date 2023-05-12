@@ -170,6 +170,17 @@ static void update_msoc(struct qpnp_qg *chip)
 {
 	int rc = 0, sdam_soc, batt_temp = 0,  batt_soc_32bit = 0;
 	bool usb_present = is_usb_present(chip);
+#ifdef ODM_WT_EDIT
+	/* Maybe use when define linearize_soc */
+	static int skip_soc_catch_up_cnt = 0;
+
+	dump_all_soc(chip);
+
+	if (skip_soc_catch_up_cnt < 2) {
+		chip->catch_up_soc = chip->msoc;
+		skip_soc_catch_up_cnt ++;
+	}
+#endif /* ODM_WT_EDIT */
 
 	if (chip->catch_up_soc > chip->msoc) {
 		/* SOC increased */
@@ -243,6 +254,10 @@ static void scale_soc_work(struct work_struct *work)
 	struct qpnp_qg *chip = container_of(work,
 			struct qpnp_qg, scale_soc_work);
 
+#ifdef ODM_WT_EDIT
+	dump_all_soc(chip);
+#endif /* ODM_WT_EDIT */
+
 	mutex_lock(&chip->soc_lock);
 
 	if (!is_scaling_required(chip)) {
@@ -288,6 +303,10 @@ static enum alarmtimer_restart
 int qg_scale_soc(struct qpnp_qg *chip, bool force_soc)
 {
 	int rc = 0;
+
+#ifdef ODM_WT_EDIT
+	dump_all_soc(chip);
+#endif /* ODM_WT_EDIT */
 
 	mutex_lock(&chip->soc_lock);
 

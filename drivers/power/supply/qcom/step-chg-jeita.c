@@ -30,11 +30,20 @@
 		|| ((left) <= (right) && (left) <= (value) \
 			&& (value) <= (right)))
 
+#ifndef ODM_WT_EDIT
 struct range_data {
 	u32 low_threshold;
 	u32 high_threshold;
 	u32 value;
 };
+#else /* ODM_WT_EDIT */
+/* Can use negative value */
+struct range_data {
+	int low_threshold;
+	int high_threshold;
+	int value;
+};
+#endif /* ODM_WT_EDIT */
 
 struct step_chg_cfg {
 	u32			psy_prop;
@@ -57,6 +66,15 @@ struct jeita_fv_cfg {
 	struct range_data	fv_cfg[MAX_STEP_CHG_ENTRIES];
 };
 
+#ifdef ODM_WT_EDIT
+struct jeita_rechr_uv_cfg {
+	u32			psy_prop;
+	char			*prop_name;
+	int			hysteresis;
+	struct range_data	rechr_uv_cfg[MAX_STEP_CHG_ENTRIES];
+};
+#endif /* ODM_WT_EDIT */
+
 struct step_chg_info {
 	struct device		*dev;
 	ktime_t			step_last_update_time;
@@ -70,16 +88,24 @@ struct step_chg_info {
 	bool			batt_missing;
 	int			jeita_fcc_index;
 	int			jeita_fv_index;
+	#ifdef ODM_WT_EDIT
+	int			jeita_rechr_uv_index;
+	#endif /* ODM_WT_EDIT */
 	int			step_index;
 	int			get_config_retry_count;
 
 	struct step_chg_cfg	*step_chg_config;
 	struct jeita_fcc_cfg	*jeita_fcc_config;
 	struct jeita_fv_cfg	*jeita_fv_config;
+	#ifdef ODM_WT_EDIT
+	struct jeita_rechr_uv_cfg	*jeita_rechr_uv_config;
+	#endif /* ODM_WT_EDIT */
 
 	struct votable		*fcc_votable;
 	struct votable		*fv_votable;
+#ifndef ODM_WT_EDIT
 	struct votable		*usb_icl_votable;
+#endif
 	struct wakeup_source	*step_chg_ws;
 	struct power_supply	*batt_psy;
 	struct power_supply	*bms_psy;
@@ -92,7 +118,11 @@ struct step_chg_info {
 
 static struct step_chg_info *the_chip;
 
+#ifndef ODM_WT_EDIT
 #define STEP_CHG_HYSTERISIS_DELAY_US		5000000 /* 5 secs */
+#else /* ODM_WT_EDIT */
+#define STEP_CHG_HYSTERISIS_DELAY_US		1500000 /* 1.5 secs */
+#endif /* ODM_WT_EDIT */
 
 #define BATT_HOT_DECIDEGREE_MAX			600
 #define GET_CONFIG_DELAY_MS		2000
@@ -121,6 +151,7 @@ static bool is_bms_available(struct step_chg_info *chip)
 	return true;
 }
 
+#ifndef ODM_WT_EDIT
 static bool is_usb_available(struct step_chg_info *chip)
 {
 	if (!chip->usb_psy)
@@ -198,6 +229,91 @@ clean:
 	memset(ranges, 0, tuples * sizeof(struct range_data));
 	return rc;
 }
+#else /* ODM_WT_EDIT */
+/* Can use negative value */
+static int read_range_data_from_node(struct device_node *node,
+		const char *prop_str, struct range_data *ranges,
+		int max_threshold, int max_value)
+{
+	int rc = 0, i, length, per_tuple_length, tuples;
+
+	rc = of_property_count_elems_of_size(node, prop_str, sizeof(u32));
+	if (rc < 0) {
+		pr_err("Count %s failed, rc=%d\n", prop_str, rc);
+		return rc;
+	}
+
+	length = rc;
+	per_tuple_length = sizeof(struct range_data) / sizeof(u32);
+	if (length % per_tuple_length) {
+		pr_err("%s length (%d) should be multiple of %d\n",
+				prop_str, length, per_tuple_length);
+		return -EINVAL;
+	}
+	tuples = length / per_tuple_length;
+
+	if (tuples > MAX_STEP_CHG_ENTRIES) {
+		pr_err("too many entries(%d), only %d allowed\n",
+				tuples, MAX_STEP_CHG_ENTRIES);
+		return -EINVAL;
+	}
+
+	rc = of_property_read_u32_array(node, prop_str,
+			(u32 *)ranges, length);
+	if (rc) {
+		pr_err("Read %s failed, rc=%d", prop_str, rc);
+		return rc;
+	}
+
+	for (i = 0; i < tuples; i++) {
+		if (ranges[i].low_threshold >
+				ranges[i].high_threshold) {
+			pr_err("%s %d:%d-%d 0 thresholds should be in ascendant ranges\n",
+						prop_str, i, ranges[i].low_threshold, ranges[i].high_threshold);
+			rc = -EINVAL;
+			goto clean;
+		}
+
+		if (i != 0) {
+			if (ranges[i - 1].high_threshold >
+					ranges[i].low_threshold) {
+				pr_err("%s %d:%d-%d 1 thresholds should be in ascendant ranges\n",
+							prop_str, i, ranges[i-1].high_threshold, ranges[i].low_threshold);
+				rc = -EINVAL;
+				goto clean;
+			}
+		}
+
+		if (ranges[i].low_threshold > max_threshold)
+			ranges[i].low_threshold = max_threshold;
+		if (ranges[i].high_threshold > max_threshold)
+			ranges[i].high_threshold = max_threshold;
+		if (ranges[i].value > max_value)
+			ranges[i].value = max_value;
+	}
+
+	return rc;
+clean:
+	memset(ranges, 0, tuples * sizeof(struct range_data));
+	return rc;
+}
+
+int return_step_chg_jeita_fcc_low_threshold(void)
+{
+	if (the_chip == NULL) {
+		return 220;
+	}
+	if (the_chip->config_is_read == false) {
+		return 220;
+	}
+
+	if ((the_chip->jeita_fcc_index < 0) || (the_chip->jeita_fcc_index >= MAX_STEP_CHG_ENTRIES)) {
+		return -12345;
+	} else {
+		return the_chip->jeita_fcc_config->fcc_cfg[the_chip->jeita_fcc_index].low_threshold;
+	}
+}
+#endif /* ODM_WT_EDIT */
 
 static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 {
@@ -306,6 +422,17 @@ static int get_step_chg_jeita_setting_from_profile(struct step_chg_info *chip)
 		chip->sw_jeita_cfg_valid = false;
 	}
 
+	#ifdef ODM_WT_EDIT
+	rc = read_range_data_from_node(profile_node,
+			"qcom,jeita-rechr-uv-ranges",
+			chip->jeita_rechr_uv_config->rechr_uv_cfg,
+			BATT_HOT_DECIDEGREE_MAX, max_fv_uv);
+	if (rc < 0) {
+		pr_debug("Read qcom,jeita-rechr-uv-ranges failed from battery profile, rc=%d\n",
+					rc);
+	}
+	#endif /* ODM_WT_EDIT */
+
 	return rc;
 }
 
@@ -346,6 +473,13 @@ static void get_config_work(struct work_struct *work)
 			chip->jeita_fv_config->fv_cfg[i].low_threshold,
 			chip->jeita_fv_config->fv_cfg[i].high_threshold,
 			chip->jeita_fv_config->fv_cfg[i].value);
+	#ifdef ODM_WT_EDIT
+	for (i = 0; i < MAX_STEP_CHG_ENTRIES; i++)
+		pr_debug("jeita-rechr-uv-cfg: %ddecidegree ~ %ddecidegre, %duV\n",
+			chip->jeita_rechr_uv_config->rechr_uv_cfg[i].low_threshold,
+			chip->jeita_rechr_uv_config->rechr_uv_cfg[i].high_threshold,
+			chip->jeita_rechr_uv_config->rechr_uv_cfg[i].value);
+	#endif /* ODM_WT_EDIT */
 
 	return;
 
@@ -409,6 +543,14 @@ static int get_val(struct range_data *range, int hysteresis, int current_index,
 	 */
 	if (current_index == -EINVAL)
 		return 0;
+
+	#ifdef ODM_WT_EDIT
+		if (*new_index > current_index + 1) {
+			*new_index = current_index + 1;
+		} else if (*new_index < current_index - 1) {
+			*new_index = current_index - 1;
+		}
+	#endif /* ODM_WT_EDIT */
 
 	/*
 	 * Check for hysteresis if it in the neighbourhood
@@ -505,6 +647,13 @@ static int handle_jeita(struct step_chg_info *chip)
 	union power_supply_propval pval = {0, };
 	int rc = 0, fcc_ua = 0, fv_uv = 0;
 	u64 elapsed_us;
+	#ifdef ODM_WT_EDIT
+	int rechr_uv = 0;
+	int temp_fcc_index = 0;
+	int temp_fv_index = 0;
+	int temp_rechr_index = 0;
+	union power_supply_propval pvol_val = {0, };
+	#endif /* ODM_WT_EDIT */
 
 	rc = power_supply_get_property(chip->batt_psy,
 		POWER_SUPPLY_PROP_SW_JEITA_ENABLED, &pval);
@@ -518,8 +667,10 @@ static int handle_jeita(struct step_chg_info *chip)
 			vote(chip->fcc_votable, JEITA_VOTER, false, 0);
 		if (chip->fv_votable)
 			vote(chip->fv_votable, JEITA_VOTER, false, 0);
+#ifndef ODM_WT_EDIT
 		if (chip->usb_icl_votable)
 			vote(chip->usb_icl_votable, JEITA_VOTER, false, 0);
+#endif
 		return 0;
 	}
 
@@ -534,6 +685,11 @@ static int handle_jeita(struct step_chg_info *chip)
 				chip->jeita_fcc_config->prop_name, rc);
 		return rc;
 	}
+
+#ifdef ODM_WT_EDIT
+	temp_fcc_index = chip->jeita_fcc_index;
+	temp_fv_index = chip->jeita_fv_index;
+#endif /* ODM_WT_EDIT */
 
 	rc = get_val(chip->jeita_fcc_config->fcc_cfg,
 			chip->jeita_fcc_config->hysteresis,
@@ -550,6 +706,22 @@ static int handle_jeita(struct step_chg_info *chip)
 		/* changing FCC is a must */
 		return -EINVAL;
 
+	#ifdef ODM_WT_EDIT
+	if (chip->jeita_fcc_config->fcc_cfg[chip->jeita_fcc_index].low_threshold == 50)/*(chip->jeita_fcc_index == 2)*/ {
+		rc = power_supply_get_property(chip->batt_psy,
+				POWER_SUPPLY_PROP_VOLTAGE_NOW, &pvol_val);
+		if (rc < 0) {
+			pr_err("Couldn't read batt voltage property rc=%d\n",  rc);
+			//return rc;
+		} else {
+			/* temprature: 5~12, set charger current to 600mA(0.2C) when voltage was above 4.18V */
+			/* If had set 600mA, hold it untill plug-out charger cable */
+			if ((pvol_val.intval >= 4180000) || (get_client_vote(chip->fcc_votable, JEITA_VOTER) == 600000)) {
+				fcc_ua = 600000;
+			}
+		}
+	}
+	#endif /* ODM_WT_EDIT */
 	vote(chip->fcc_votable, JEITA_VOTER, fcc_ua ? true : false, fcc_ua);
 
 	rc = get_val(chip->jeita_fv_config->fv_cfg,
@@ -565,6 +737,7 @@ static int handle_jeita(struct step_chg_info *chip)
 	if (!chip->fv_votable)
 		goto update_time;
 
+#ifndef ODM_WT_EDIT
 	if (!chip->usb_icl_votable)
 		chip->usb_icl_votable = find_votable("USB_ICL");
 
@@ -596,7 +769,49 @@ static int handle_jeita(struct step_chg_info *chip)
 	}
 
 set_jeita_fv:
+#endif
+
 	vote(chip->fv_votable, JEITA_VOTER, fv_uv ? true : false, fv_uv);
+
+
+	#ifdef ODM_WT_EDIT
+	temp_rechr_index = chip->jeita_rechr_uv_index;
+	rc = get_val(chip->jeita_rechr_uv_config->rechr_uv_cfg,
+			chip->jeita_rechr_uv_config->hysteresis,
+			chip->jeita_rechr_uv_index,
+			pval.intval,
+			&chip->jeita_rechr_uv_index,
+			&rechr_uv);
+	if (rc < 0) {
+		/* Do nothing if no step-based fcc is found */
+		goto update_time;
+	}
+
+	pvol_val.intval = rechr_uv;
+	if (chip->jeita_rechr_uv_index != temp_rechr_index) {
+		rc = power_supply_set_property(chip->batt_psy,
+				POWER_SUPPLY_PROP_RECHARGE_UV, &pvol_val);
+		if (rc < 0) {
+			pr_err("Couldn't set RECHARGE_UV %d property rc=%d\n",
+					pvol_val.intval, rc);
+			//return rc;
+		}
+	}
+	if ((chip->jeita_fcc_index != temp_fcc_index) || (chip->jeita_fv_index != temp_fv_index)
+			|| (chip->jeita_rechr_uv_index != temp_rechr_index)) {
+		pr_info("%s = %d FCC=%duA(%d->%d) FV=%duV(%d->%d) Recharger=%duV(%d->%d)\n",
+			chip->jeita_fcc_config->prop_name, pval.intval, fcc_ua, temp_fcc_index, chip->jeita_fcc_index,
+			fv_uv, temp_fv_index, chip->jeita_fv_index, rechr_uv, temp_rechr_index, chip->jeita_rechr_uv_index);
+	}
+	#endif /* ODM_WT_EDIT */
+
+	#ifndef ODM_WT_EDIT
+	pr_debug("%s = %d FCC = %duA FV = %duV\n",
+		chip->jeita_fcc_config->prop_name, pval.intval, fcc_ua, fv_uv);
+	#else /* ODM_WT_EDIT */
+	pr_debug("%s = %d FCC = %duA FV = %duV Recharger = %duV\n",
+		chip->jeita_fcc_config->prop_name, pval.intval, fcc_ua, fv_uv, rechr_uv);
+	#endif /* ODM_WT_EDIT */
 
 update_time:
 	chip->jeita_last_update_time = ktime_get();
@@ -654,10 +869,18 @@ static void status_change_work(struct work_struct *work)
 	int reschedule_us;
 	int reschedule_jeita_work_us = 0;
 	int reschedule_step_work_us = 0;
+#ifndef ODM_WT_EDIT
 	union power_supply_propval prop = {0, };
-
+#endif
 	if (!is_batt_available(chip))
 		goto exit_work;
+
+#ifdef ODM_WT_EDIT
+	if (chip->config_is_read == false) {
+		__pm_relax(chip->step_chg_ws);
+		return;
+	}
+#endif /* ODM_WT_EDIT */
 
 	handle_battery_insertion(chip);
 
@@ -674,6 +897,7 @@ static void status_change_work(struct work_struct *work)
 	if (rc < 0)
 		pr_err("Couldn't handle step rc = %d\n", rc);
 
+#ifndef ODM_WT_EDIT
 	/* Remove stale votes on USB removal */
 	if (is_usb_available(chip)) {
 		prop.intval = 0;
@@ -685,6 +909,7 @@ static void status_change_work(struct work_struct *work)
 						false, 0);
 		}
 	}
+#endif
 
 	reschedule_us = min(reschedule_jeita_work_us, reschedule_step_work_us);
 	if (reschedule_us == 0)
@@ -786,6 +1011,17 @@ int qcom_step_chg_init(struct device *dev,
 	chip->jeita_fv_config->prop_name = "BATT_TEMP";
 	chip->jeita_fv_config->hysteresis = 10;
 
+	#ifdef ODM_WT_EDIT
+	chip->jeita_rechr_uv_index = -EINVAL;
+	chip->jeita_rechr_uv_config = devm_kzalloc(dev,
+			sizeof(struct jeita_rechr_uv_cfg), GFP_KERNEL);
+	if (chip->jeita_rechr_uv_config != NULL) {
+		chip->jeita_rechr_uv_config->psy_prop = POWER_SUPPLY_PROP_TEMP;
+		chip->jeita_rechr_uv_config->prop_name = "BATT_TEMP";
+		chip->jeita_rechr_uv_config->hysteresis = 10;
+	}
+	#endif /* ODM_WT_EDIT */
+
 	INIT_DELAYED_WORK(&chip->status_change_work, status_change_work);
 	INIT_DELAYED_WORK(&chip->get_config_work, get_config_work);
 
@@ -817,6 +1053,9 @@ void qcom_step_chg_deinit(void)
 	cancel_delayed_work_sync(&chip->status_change_work);
 	cancel_delayed_work_sync(&chip->get_config_work);
 	power_supply_unreg_notifier(&chip->nb);
+	#ifdef ODM_WT_EDIT
+	 __pm_relax(chip->step_chg_ws);
+	 #endif /*ODM_WT_EDIT*/
 	wakeup_source_unregister(chip->step_chg_ws);
 	the_chip = NULL;
 }

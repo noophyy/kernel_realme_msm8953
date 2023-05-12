@@ -25,6 +25,9 @@
 #include <linux/delay.h>
 #include <linux/input/qpnp-power-on.h>
 #include <linux/of_address.h>
+#ifdef ODM_WT_EDIT
+#include <linux/wt_system_monitor.h>
+#endif /* ODM_WT_EDIT */
 
 #include <asm/cacheflush.h>
 #include <asm/system_misc.h>
@@ -56,17 +59,32 @@ static bool scm_deassert_ps_hold_supported;
 /* Download mode master kill-switch */
 static void __iomem *msm_ps_hold;
 static phys_addr_t tcsr_boot_misc_detect;
-static void scm_disable_sdi(void);
 
-#ifdef CONFIG_QCOM_DLOAD_MODE
 /* Runtime could be only changed value once.
  * There is no API from TZ to re-enable the registers.
  * So the SDI cannot be re-enabled when it already by-passed.
  */
+#if 0 /*Use OPPO switch*/
+#ifndef ODM_WT_EDIT
 static int download_mode = 1;
 #else
-static const int download_mode;
+#ifdef WT_FINAL_RELEASE
+static int download_mode = 0;
+#else
+static int download_mode = 1;
+#endif //WT_FINAL_RELEASE
+#endif /* ODM_WT_EDIT */
 #endif
+
+#ifdef VENDOR_EDIT
+#if defined(CONFIG_OPPO_DAILY_BUILD)
+	static int download_mode = 1;
+#else
+	static int download_mode = 0;
+#endif
+#endif/*VENDOR_EDIT*/
+static struct kobject dload_kobj;
+static void scm_disable_sdi(void);
 
 #ifdef CONFIG_QCOM_DLOAD_MODE
 #define EDL_MODE_PROP "qcom,msm-imem-emergency_download_mode"
@@ -139,7 +157,11 @@ static int scm_set_dload_mode(int arg1, int arg2)
 				&desc);
 }
 
+#ifndef VENDOR_EDIT
 static void set_dload_mode(int on)
+#else
+void set_dload_mode(int on)
+#endif
 {
 	int ret;
 
@@ -294,13 +316,46 @@ static void msm_restart_prepare(const char *cmd)
 	if (qpnp_pon_check_hard_reset_stored()) {
 		/* Set warm reset as true when device is in dload mode */
 		if (get_dload_mode() ||
+#ifdef ODM_WT_EDIT
+			in_panic ||
+#endif /* ODM_WT_EDIT */
 			((cmd != NULL && cmd[0] != '\0') &&
 			!strcmp(cmd, "edl")))
 			need_warm_reset = true;
 	} else {
 		need_warm_reset = (get_dload_mode() ||
+#ifdef ODM_WT_EDIT
+				in_panic ||
+#endif /* ODM_WT_EDIT */
 				(cmd != NULL && cmd[0] != '\0'));
 	}
+#ifdef ODM_WT_EDIT
+	if (in_panic) {
+		//warm reset
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		qpnp_pon_set_restart_reason(PON_RESTART_REASON_ODM_KERNEL);
+		flush_cache_all();
+		// outer_flush_all is not supported by 64bit kernel
+#ifndef CONFIG_ARM64
+		outer_flush_all();
+#endif
+		return;
+	}
+#endif
+
+#ifdef ODM_WT_EDIT
+	if (in_panic) {
+		//warm reset
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		qpnp_pon_set_restart_reason(PON_RESTART_REASON_ODM_KERNEL);
+		flush_cache_all();
+		// outer_flush_all is not supported by 64bit kernel
+#ifndef CONFIG_ARM64
+		outer_flush_all();
+#endif
+		return;
+	}
+#endif
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (need_warm_reset)
@@ -309,10 +364,19 @@ static void msm_restart_prepare(const char *cmd)
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
 
 	if (cmd != NULL) {
+#ifdef ODM_WT_EDIT
+#ifdef WT_SYSTEM_MONITOR
+		set_reset_magic(RESET_MAGIC_CMD_REBOOT);
+#endif
+#endif /* ODM_WT_EDIT */
 		if (!strncmp(cmd, "bootloader", 10)) {
+#ifdef ODM_WT_EDIT
+#ifndef WT_FINAL_RELEASE
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_BOOTLOADER);
 			__raw_writel(0x77665500, restart_reason);
+#endif
+#endif
 		} else if (!strncmp(cmd, "recovery", 8)) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RECOVERY);
@@ -360,9 +424,49 @@ static void msm_restart_prepare(const char *cmd)
 			}
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+		#ifndef ODM_WT_EDIT
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
+		#else
+		} else if (!strncmp(cmd, "wlan",4 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_WLAN);
+		    __raw_writel(0x77665520, restart_reason);
+		} else if (!strncmp(cmd, "rf",2 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_RF);
+		    __raw_writel(0x77665521, restart_reason);
+		} else if (!strncmp(cmd, "ftm",3 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_FTM);
+		    __raw_writel(0x77665522, restart_reason);
+		} else if (!strncmp(cmd, "kernel",6 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_KERNEL);
+			__raw_writel(0x77665523, restart_reason);
+		} else if (!strncmp(cmd, "modem",5 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_MODEM);
+			__raw_writel(0x77665524, restart_reason);
+		} else if (!strncmp(cmd, "android",7 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_ANDROID);
+			__raw_writel(0x77665525, restart_reason);
+		} else if (!strncmp(cmd, "silence",7 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_SILENCE);
+			__raw_writel(0x77665526, restart_reason);
+		} else if (!strncmp(cmd, "sau",3 )){
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_ODM_SAU);
+			__raw_writel(0x77665527, restart_reason);
+		} else {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_REBOOT);
+			__raw_writel(0x77665501, restart_reason);
+		}
+		#endif /* ODM_WT_EDIT */
 	}
 
 	flush_cache_all();

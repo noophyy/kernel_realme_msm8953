@@ -319,12 +319,21 @@ int qg_get_battery_temp(struct qpnp_qg *chip, int *temp)
 		return 0;
 	}
 
+	#ifndef ODM_WT_EDIT
 	rc = qpnp_vadc_read(chip->vadc_dev, VADC_BAT_THERM_PU2, &result);
 	if (rc) {
 		pr_err("Failed reading adc channel=%d, rc=%d\n",
 					VADC_BAT_THERM_PU2, rc);
 		return rc;
 	}
+	#else /* ODM_WT_EDIT */
+	rc = qpnp_vadc_read(chip->vadc_dev, VADC_BAT_THERM_PU1, &result);
+	if (rc) {
+		pr_err("Failed reading adc channel=%d, rc=%d\n",
+					VADC_BAT_THERM_PU1, rc);
+		return rc;
+	}
+	#endif /* ODM_WT_EDIT */
 	pr_debug("batt_temp = %lld meas = 0x%llx\n",
 			result.physical, result.measurement);
 
@@ -364,7 +373,11 @@ int qg_get_battery_current(struct qpnp_qg *chip, int *ibat_ua)
 	}
 
 	last_ibat = sign_extend32(last_ibat, 15);
+	#ifndef ODM_WT_EDIT
 	*ibat_ua = I_RAW_TO_UA(last_ibat);
+	#else /* ODM_WT_EDIT */
+	*ibat_ua = I_RAW_TO_UA(last_ibat)/1000;
+	#endif /* ODM_WT_EDIT */
 
 release:
 	/* release */
