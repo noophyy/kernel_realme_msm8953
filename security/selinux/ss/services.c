@@ -746,7 +746,11 @@ out:
 	kfree(n);
 	kfree(t);
 
+#ifdef VENDOR_EDIT
+    if (!is_selinux_enforcing())
+#else
 	if (!selinux_enforcing)
+#endif /* VENDOR_EDIT */
 		return 0;
 	return -EPERM;
 }
@@ -1529,7 +1533,11 @@ out:
 	kfree(s);
 	kfree(t);
 	kfree(n);
+#ifdef VENDOR_EDIT
+    if (!is_selinux_enforcing())
+#else
 	if (!selinux_enforcing)
+#endif /* VENDOR_EDIT */
 		return 0;
 	return -EACCES;
 }
@@ -1820,7 +1828,11 @@ static inline int convert_context_handle_invalid_context(struct context *context
 	char *s;
 	u32 len;
 
+#ifdef VENDOR_EDIT
+    if (is_selinux_enforcing())
+#else
 	if (selinux_enforcing)
+#endif /* VENDOR_EDIT */
 		return -EINVAL;
 
 	if (!context_struct_to_string(context, &s, &len)) {
