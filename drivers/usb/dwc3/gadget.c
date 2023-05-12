@@ -37,6 +37,7 @@
 #include "gadget.h"
 #include "io.h"
 
+
 static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc, bool remote_wakeup);
 static int dwc3_gadget_wakeup_int(struct dwc3 *dwc);
 static void dwc3_stop_active_transfers(struct dwc3 *dwc);
@@ -2007,6 +2008,10 @@ static int dwc3_gadget_set_selfpowered(struct usb_gadget *g,
 static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 {
 	u32			reg;
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable the irq before clearing run_stop bit  2019.7.23*/
+	u32			reg1;
+#endif /*ODM_WT_EDIT*/
 	u32			timeout = 1500;
 
 	reg = dwc3_readl(dwc->regs, DWC3_DCTL);
@@ -2032,6 +2037,19 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 	} else {
 		dbg_event(0xFF, "Pullup_disable", is_on);
 		dwc3_gadget_disable_irq(dwc);
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable the irq before clearing run_stop bit  2019.7.23*/
+		/* Mask all interrupts */
+		reg1 = dwc3_readl(dwc->regs, DWC3_GEVNTSIZ(0));
+		reg1 |= DWC3_GEVNTSIZ_INTMASK;
+		dwc3_writel(dwc->regs, DWC3_GEVNTSIZ(0), reg1);
+		/*
+		 * Reset the err_evt_seen so that the interrupts on
+		 * next connect/session is processed correctly.
+		 */
+		dwc->err_evt_seen = false;
+		dwc->pullups_connected = false;
+#endif /*ODM_WT_EDIT*/
 		__dwc3_gadget_ep_disable(dwc->eps[0]);
 		__dwc3_gadget_ep_disable(dwc->eps[1]);
 
@@ -2047,11 +2065,29 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on, int suspend)
 
 		if (dwc->has_hibernation && !suspend)
 			reg &= ~DWC3_DCTL_KEEP_CONNECT;
-
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable the irq before clearing run_stop bit  2019.7.23*/
 		dwc->pullups_connected = false;
+#endif /*ODM_WT_EDIT*/
 	}
 
 	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
+
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable the irq before clearing run_stop bit  2019.7.23*/
+	/* Controller is not halted until the events are acknowledged */
+	if (!is_on) {
+		/*
+		 * Clear out any pending events (i.e. End Transfer Command
+		 * Complete).
+		 */
+		reg1 = dwc3_readl(dwc->regs, DWC3_GEVNTCOUNT(0));
+		reg1 &= DWC3_GEVNTCOUNT_MASK;
+		dbg_log_string("remaining EVNTCOUNT(0)=%d", reg1);
+		dwc3_writel(dwc->regs, DWC3_GEVNTCOUNT(0), reg1);
+		dwc3_notify_event(dwc, DWC3_GSI_EVT_BUF_CLEAR, 0);
+	}
+#endif /*ODM_WT_EDIT*/
 
 	do {
 		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
@@ -2107,7 +2143,15 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 	pm_runtime_get_sync(dwc->dev);
 	dbg_event(0xFF, "Pullup gsync",
 		atomic_read(&dwc->dev->power.usage_count));
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable the irq before clearing run_stop bit   2019.7.23 */
+	disable_irq(dwc->irq);
+#endif /*ODM_WT_EDIT*/
 	spin_lock_irqsave(&dwc->lock, flags);
+#ifdef ODM_WT_EDIT
+	if (dwc->ep0state != EP0_SETUP_PHASE)
+		dbg_event(0xFF, "EP0 is not in SETUP phase\n", 0);
+#endif /*ODM_WT_EDIT*/
 	/*
 	 * If we are here after bus suspend notify otg state machine to
 	 * increment pm usage count of dwc to prevent pm_runtime_suspend
@@ -2118,7 +2162,9 @@ static int dwc3_gadget_pullup(struct usb_gadget *g, int is_on)
 
 	ret = dwc3_gadget_run_stop(dwc, is_on, false);
 	spin_unlock_irqrestore(&dwc->lock, flags);
-
+#ifdef ODM_WT_EDIT
+	enable_irq(dwc->irq);
+#endif /*ODM_WT_EDIT*/
 	pm_runtime_mark_last_busy(dwc->dev);
 	pm_runtime_put_autosuspend(dwc->dev);
 	dbg_event(0xFF, "Pullup put",
@@ -3217,6 +3263,10 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 	speed = reg & DWC3_DSTS_CONNECTSPD;
 	dwc->speed = speed;
 
+#ifdef ODM_WT_EDIT
+	/* Reset the retry on erratic error event count */
+	dwc->retries_on_error = 0;
+#endif /*ODM_WT_EDIT*/
 	dwc3_update_ram_clk_sel(dwc, speed);
 
 	switch (speed) {
@@ -3354,8 +3404,14 @@ static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc, bool remote_wakeup)
 
 		/*
 		 * In case of remote wake up dwc3_gadget_wakeup_work()
-		 * is doing pm_runtime_get_sync().
+		 * is doing pm_runtime_get_sync(). But mark last wakeup
+		 * event here to prevent runtime_suspend happening before this
+		 * wakeup event is processed.
 		 */
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+		pm_runtime_mark_last_busy(dwc->dev);
+#endif /*ODM_WT_EDIT*/
 		dev_dbg(dwc->dev, "Notify OTG from %s\n", __func__);
 		dwc->b_suspend = false;
 		dwc3_notify_event(dwc,
@@ -3588,7 +3644,11 @@ static void dwc3_gadget_interrupt(struct dwc3 *dwc,
 		break;
 	case DWC3_DEVICE_EVENT_ERRATIC_ERROR:
 		dwc3_trace(trace_dwc3_gadget, "Erratic Error");
+#ifndef ODM_WT_EDIT
 		dbg_event(0xFF, "ERROR", 0);
+#else /*ODM_WT_EDIT*/
+		dbg_event(0xFF, "ERROR", dwc->retries_on_error);
+#endif /*ODM_WT_EDIT*/
 		dwc->dbg_gadget_events.erratic_error++;
 		break;
 	case DWC3_DEVICE_EVENT_CMD_CMPL:
@@ -3667,9 +3727,13 @@ static irqreturn_t dwc3_process_event_buf(struct dwc3 *dwc)
 			evt->lpos = (evt->lpos + left) %
 					DWC3_EVENT_BUFFERS_SIZE;
 			dwc3_writel(dwc->regs, DWC3_GEVNTCOUNT(0), left);
+
 			if (dwc3_notify_event(dwc,
 						DWC3_CONTROLLER_ERROR_EVENT, 0))
 				dwc->err_evt_seen = 0;
+#ifdef ODM_WT_EDIT
+			dwc->retries_on_error++;
+#endif /*ODM_WT_EDIT*/
 			break;
 		}
 

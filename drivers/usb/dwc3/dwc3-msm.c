@@ -135,6 +135,37 @@ struct dwc3_msm_req_complete {
 			      struct usb_request *req);
 };
 
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+enum dwc3_drd_state {
+	DRD_STATE_UNDEFINED = 0,
+
+	DRD_STATE_IDLE,
+	DRD_STATE_PERIPHERAL,
+	DRD_STATE_PERIPHERAL_SUSPEND,
+
+	DRD_STATE_HOST_IDLE,
+	DRD_STATE_HOST,
+};
+
+static const char *const state_names[] = {
+	[DRD_STATE_UNDEFINED] = "undefined",
+	[DRD_STATE_IDLE] = "idle",
+	[DRD_STATE_PERIPHERAL] = "peripheral",
+	[DRD_STATE_PERIPHERAL_SUSPEND] = "peripheral_suspend",
+	[DRD_STATE_HOST_IDLE] = "host_idle",
+	[DRD_STATE_HOST] = "host",
+};
+
+static const char *dwc3_drd_state_string(enum dwc3_drd_state state)
+{
+	if (state < 0 || state >= ARRAY_SIZE(state_names))
+		return "UNKNOWN";
+
+	return state_names[state];
+}
+#endif /*ODM_WT_EDIT*/
+
 enum dwc3_id_state {
 	DWC3_ID_GROUND = 0,
 	DWC3_ID_FLOAT,
@@ -175,7 +206,10 @@ static const struct usb_irq usb_irq_info[USB_MAX_IRQ] = {
 #define ID			0
 #define B_SESS_VLD		1
 #define B_SUSPEND		2
-
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+#define WAIT_FOR_LPM		3
+#endif /*ODM_WT_EDIT*/
 #define PM_QOS_SAMPLE_SEC	2
 #define PM_QOS_THRESHOLD	400
 
@@ -220,7 +254,12 @@ struct dwc3_msm {
 	unsigned long		inputs;
 	unsigned int		max_power;
 	bool			charging_disabled;
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	enum usb_otg_state	otg_state;
+#else /*ODM_WT_EDIT*/
+	enum dwc3_drd_state	drd_state;
+#endif /*ODM_WT_EDIT*/
 	u32			bus_perf_client;
 	struct msm_bus_scale_pdata	*bus_scale_table;
 	struct power_supply	*usb_psy;
@@ -1859,9 +1898,19 @@ static void dwc3_msm_notify_event(struct dwc3 *dwc, unsigned int event,
 		reg = dwc3_msm_read_reg(mdwc->base, DWC3_GCTL);
 		reg |= DWC3_GCTL_CORESOFTRESET;
 		dwc3_msm_write_reg(mdwc->base, DWC3_GCTL, reg);
-
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable device events after maximum error retries   2019.7.23 */
 		/* restart USB which performs full reset and reconnect */
 		schedule_work(&mdwc->restart_usb_work);
+#else /*ODM_WT_EDIT*/
+		/*
+		 * If the core could not recover after MAX_ERROR_RECOVERY_TRIES,
+		 * skip the restart USB work and keep the core in softreset
+		 * state.
+		 */
+		if (dwc->retries_on_error < MAX_ERROR_RECOVERY_TRIES)
+			schedule_work(&mdwc->restart_usb_work);
+#endif /*ODM_WT_EDIT*/
 		break;
 	case DWC3_CONTROLLER_RESET_EVENT:
 		dev_dbg(mdwc->dev, "DWC3_CONTROLLER_RESET_EVENT received\n");
@@ -2015,6 +2064,18 @@ static void dwc3_msm_notify_event(struct dwc3 *dwc, unsigned int event,
 			dwc3_writel(dwc->regs, DWC3_GEVNTCOUNT((i+1)), 0);
 		}
 		break;
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic  Disable device events after maximum error retries     2019.7.23 */
+	case DWC3_GSI_EVT_BUF_CLEAR:
+		dev_dbg(mdwc->dev, "DWC3_GSI_EVT_BUF_CLEAR\n");
+		for (i = 0; i < mdwc->num_gsi_event_buffers; i++) {
+			reg = dwc3_readl(dwc->regs, DWC3_GEVNTCOUNT((i+1)));
+			reg &= DWC3_GEVNTCOUNT_MASK;
+			dwc3_writel(dwc->regs, DWC3_GEVNTCOUNT((i+1)), reg);
+			dbg_log_string("remaining EVNTCOUNT(%d)=%d", i+1, reg);
+		}
+		break;
+#endif /*ODM_WT_EDIT*/
 	case DWC3_GSI_EVT_BUF_FREE:
 		dev_dbg(mdwc->dev, "DWC3_GSI_EVT_BUF_FREE\n");
 		if (!mdwc->gsi_ev_buff)
@@ -2108,7 +2169,12 @@ static void dwc3_msm_power_collapse_por(struct dwc3_msm *mdwc)
 	dwc3_msm_write_reg_field(mdwc->base, PWR_EVNT_IRQ_MASK_REG,
 				PWR_EVNT_POWERDOWN_IN_P3_MASK, 1);
 
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	if (mdwc->otg_state == OTG_STATE_A_HOST) {
+#else /*ODM_WT_EDIT*/
+	if (mdwc->drd_state == DRD_STATE_HOST) {
+#endif /*ODM_WT_EDIT*/
 		dev_dbg(mdwc->dev, "%s: set the core in host mode\n",
 							__func__);
 		dwc3_set_mode(dwc, DWC3_GCTL_PRTCAP_HOST);
@@ -2296,7 +2362,12 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc, bool hibernation)
 	}
 
 	if (!mdwc->vbus_active && dwc->is_drd &&
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 		mdwc->otg_state == OTG_STATE_B_PERIPHERAL) {
+#else /*ODM_WT_EDIT*/
+		mdwc->drd_state == DRD_STATE_PERIPHERAL) {
+#endif /*ODM_WT_EDIT*/
 		/*
 		 * In some cases, the pm_runtime_suspend may be called by
 		 * usb_bam when there is pending lpm flag. However, if this is
@@ -2318,7 +2389,12 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc, bool hibernation)
 	 * then check controller state of L2 and break
 	 * LPM sequence. Check this for device bus suspend case.
 	 */
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	if ((dwc->is_drd && mdwc->otg_state == OTG_STATE_B_SUSPEND) &&
+#else /*ODM_WT_EDIT*/
+	if ((dwc->is_drd && mdwc->drd_state == DRD_STATE_PERIPHERAL_SUSPEND) &&
+#endif /*ODM_WT_EDIT*/
 		(dwc->gadget.state != USB_STATE_CONFIGURED)) {
 		pr_err("%s(): Trying to go in LPM with state:%d\n",
 					__func__, dwc->gadget.state);
@@ -2326,6 +2402,22 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc, bool hibernation)
 		mutex_unlock(&mdwc->suspend_resume_mutex);
 		return -EBUSY;
 	}
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+	/*
+	 * Check if remote wakeup is received and pending before going
+	 * ahead with suspend routine as part of device bus suspend.
+	 */
+
+	if (!mdwc->in_host_mode && (mdwc->vbus_active &&
+		(mdwc->drd_state == DRD_STATE_PERIPHERAL_SUSPEND ||
+		mdwc->drd_state == DRD_STATE_PERIPHERAL) && !mdwc->suspend)) {
+		dev_dbg(mdwc->dev,
+			"Received wakeup event before the core suspend\n");
+		mutex_unlock(&mdwc->suspend_resume_mutex);
+		return -EBUSY;
+	}
+#endif /*ODM_WT_EDIT*/
 
 	ret = dwc3_msm_prepare_suspend(mdwc);
 	if (ret) {
@@ -2447,7 +2539,14 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc, bool hibernation)
 
 	dev_info(mdwc->dev, "DWC3 in low power mode\n");
 	dbg_event(0xFF, "Ctl Sus", atomic_read(&dwc->in_lpm));
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+	/* kick_sm if it is waiting for lpm sequence to finish */
+	if (test_and_clear_bit(WAIT_FOR_LPM, &mdwc->inputs))
+		schedule_delayed_work(&mdwc->sm_work, 0);
+#endif /*ODM_WT_EDIT*/
 	mutex_unlock(&mdwc->suspend_resume_mutex);
+
 	return 0;
 }
 
@@ -4082,7 +4181,11 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 
 		dwc3_usb3_phy_suspend(dwc, false);
 		mdwc->in_host_mode = false;
-
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+		/* wait for LPM, to ensure h/w is reset after stop_host */
+		set_bit(WAIT_FOR_LPM, &mdwc->inputs);
+#endif /*ODM_WT_EDIT*/
 		pm_runtime_put_sync_suspend(mdwc->dev);
 		dbg_event(0xFF, "StopHost psync",
 			atomic_read(&mdwc->dev->power.usage_count));
@@ -4166,6 +4269,11 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 		usb_phy_notify_disconnect(mdwc->ss_phy, USB_SPEED_SUPER);
 		dwc3_override_vbus_status(mdwc, false);
 		dwc3_usb3_phy_suspend(dwc, false);
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
+		/* wait for LPM, to ensure h/w is reset after stop_peripheral */
+		set_bit(WAIT_FOR_LPM, &mdwc->inputs);
+#endif /*ODM_WT_EDIT*/
 	}
 
 	pm_runtime_put_sync(mdwc->dev);
@@ -4240,7 +4348,12 @@ static int dwc3_restart_usb_host_mode(struct notifier_block *nb,
 	dbg_event(0xFF, "pm_runtime_sus", ret);
 
 	dwc->maximum_speed = usb_speed;
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+	mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 	schedule_delayed_work(&mdwc->sm_work, 0);
 	dbg_event(0xFF, "complete_host_change", dwc->maximum_speed);
 err:
@@ -4285,7 +4398,14 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned int mA)
 	if (mdwc->max_power == mA || psy_type != POWER_SUPPLY_TYPE_USB)
 		return 0;
 
+#ifdef VENDOR_EDIT
+    dev_info(mdwc->dev, "Avail curr from USB = %u, max_power = %u\n", mA, mdwc->max_power);
+    if ((mdwc->max_power > 2) && (mA == 0 || mA == 2))
+        return 0;
+#else
 	dev_info(mdwc->dev, "Avail curr from USB = %u\n", mA);
+#endif
+
 	/* Set max current limit in uA */
 	pval.intval = 1000 * mA;
 
@@ -4307,7 +4427,7 @@ set_prop:
  *
  * @w: Pointer to the dwc3 otg workqueue
  *
- * NOTE: After any change in otg_state, we must reschdule the state machine.
+ * NOTE: After any change in drd_state, we must reschdule the state machine.
  */
 static void dwc3_otg_sm_work(struct work_struct *w)
 {
@@ -4326,13 +4446,24 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		return;
 	}
 
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	state = usb_otg_state_string(mdwc->otg_state);
+#else /*ODM_WT_EDIT*/
+	state = dwc3_drd_state_string(mdwc->drd_state);
+#endif /*ODM_WT_EDIT*/
 	dev_dbg(mdwc->dev, "%s state\n", state);
 	dbg_event(0xFF, state, 0);
 
 	/* Check OTG state */
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	switch (mdwc->otg_state) {
 	case OTG_STATE_UNDEFINED:
+#else /*ODM_WT_EDIT*/
+	switch (mdwc->drd_state) {
+	case DRD_STATE_UNDEFINED:
+#endif /*ODM_WT_EDIT*/
 		/* put controller and phy in suspend if no cable connected */
 		if (test_bit(ID, &mdwc->inputs) &&
 				!test_bit(B_SESS_VLD, &mdwc->inputs)) {
@@ -4344,19 +4475,43 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 			pm_runtime_put_sync(mdwc->dev);
 			dbg_event(0xFF, "Undef NoUSB",
 				atomic_read(&mdwc->dev->power.usage_count));
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 			break;
 		}
 
 		dbg_event(0xFF, "Exit UNDEF", 0);
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 		mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+		mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 		pm_runtime_set_suspended(mdwc->dev);
 		pm_runtime_enable(mdwc->dev);
 		/* fall-through */
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	case OTG_STATE_B_IDLE:
+#else /*ODM_WT_EDIT*/
+	case DRD_STATE_IDLE:
+		if (test_bit(WAIT_FOR_LPM, &mdwc->inputs)) {
+			dev_dbg(mdwc->dev, "still not in lpm, wait.\n");
+			break;
+		}
+#endif /*ODM_WT_EDIT*/
 		if (!test_bit(ID, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "!id\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_A_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_HOST_IDLE;
+#endif /*ODM_WT_EDIT*/
 			work = 1;
 		} else if (test_bit(B_SESS_VLD, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "b_sess_vld\n");
@@ -4366,14 +4521,19 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				msecs_to_jiffies(SDP_CONNETION_CHECK_TIME));
 			/*
 			 * Increment pm usage count upon cable connect. Count
-			 * is decremented in OTG_STATE_B_PERIPHERAL state on
+			 * is decremented in DRD_STATE_PERIPHERAL state on
 			 * cable disconnect or in bus suspend.
 			 */
 			pm_runtime_get_sync(mdwc->dev);
 			dbg_event(0xFF, "BIDLE gsync",
 				atomic_read(&mdwc->dev->power.usage_count));
 			dwc3_otg_start_peripheral(mdwc, 1);
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_PERIPHERAL;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_PERIPHERAL;
+#endif /*ODM_WT_EDIT*/
 			work = 1;
 		} else {
 			dwc3_msm_gadget_vbus_draw(mdwc, 0);
@@ -4381,17 +4541,27 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		}
 		break;
 
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	case OTG_STATE_B_PERIPHERAL:
+#else /*ODM_WT_EDIT*/
+	case DRD_STATE_PERIPHERAL:
+#endif /*ODM_WT_EDIT*/
 		if (!test_bit(B_SESS_VLD, &mdwc->inputs) ||
 				!test_bit(ID, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "!id || !bsv\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 			cancel_delayed_work_sync(&mdwc->sdp_check);
 			dwc3_otg_start_peripheral(mdwc, 0);
 			/*
 			 * Decrement pm usage count upon cable disconnect
 			 * which was incremented upon cable connect in
-			 * OTG_STATE_B_IDLE state
+			 * DRD_STATE_IDLE state
 			 */
 			pm_runtime_put_sync_suspend(mdwc->dev);
 			dbg_event(0xFF, "!BSV psync",
@@ -4400,13 +4570,18 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 		} else if (test_bit(B_SUSPEND, &mdwc->inputs) &&
 			test_bit(B_SESS_VLD, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "BPER bsv && susp\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_SUSPEND;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_PERIPHERAL_SUSPEND;
+#endif /*ODM_WT_EDIT*/
 			/*
 			 * Decrement pm usage count upon bus suspend.
 			 * Count was incremented either upon cable
-			 * connect in OTG_STATE_B_IDLE or host
+			 * connect in DRD_STATE_IDLE or host
 			 * initiated resume after bus suspend in
-			 * OTG_STATE_B_SUSPEND state
+			 * DRD_STATE_PERIPHERAL_SUSPEND state
 			 */
 			pm_runtime_mark_last_busy(mdwc->dev);
 			pm_runtime_put_autosuspend(mdwc->dev);
@@ -4414,37 +4589,65 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				atomic_read(&mdwc->dev->power.usage_count));
 		}
 		break;
-
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	case OTG_STATE_B_SUSPEND:
+#else /*ODM_WT_EDIT*/
+	case DRD_STATE_PERIPHERAL_SUSPEND:
+#endif /*ODM_WT_EDIT*/
 		if (!test_bit(B_SESS_VLD, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "BSUSP: !bsv\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 			cancel_delayed_work_sync(&mdwc->sdp_check);
 			dwc3_otg_start_peripheral(mdwc, 0);
 		} else if (!test_bit(B_SUSPEND, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "BSUSP !susp\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_PERIPHERAL;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_PERIPHERAL;
+#endif /*ODM_WT_EDIT*/
 			/*
 			 * Increment pm usage count upon host
 			 * initiated resume. Count was decremented
 			 * upon bus suspend in
-			 * OTG_STATE_B_PERIPHERAL state.
+			 * DRD_STATE_PERIPHERAL state.
 			 */
 			pm_runtime_get_sync(mdwc->dev);
 			dbg_event(0xFF, "!SUSP gsync",
 				atomic_read(&mdwc->dev->power.usage_count));
 		}
 		break;
-
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	case OTG_STATE_A_IDLE:
+#else /*ODM_WT_EDIT*/
+	case DRD_STATE_HOST_IDLE:
+#endif /*ODM_WT_EDIT*/
 		/* Switch to A-Device*/
 		if (test_bit(ID, &mdwc->inputs)) {
 			dev_dbg(mdwc->dev, "id\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 			mdwc->vbus_retry_count = 0;
 			work = 1;
 		} else {
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_A_HOST;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_HOST;
+#endif /*ODM_WT_EDIT*/
 			ret = dwc3_otg_start_host(mdwc, 1);
 			if ((ret == -EPROBE_DEFER) &&
 						mdwc->vbus_retry_count < 3) {
@@ -4452,24 +4655,44 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 				 * Get regulator failed as regulator driver is
 				 * not up yet. Will try to start host after 1sec
 				 */
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 				mdwc->otg_state = OTG_STATE_A_IDLE;
+#else /*ODM_WT_EDIT*/
+				mdwc->drd_state = DRD_STATE_HOST_IDLE;
+#endif /*ODM_WT_EDIT*/
 				dev_dbg(mdwc->dev, "Unable to get vbus regulator. Retrying...\n");
 				delay = VBUS_REG_CHECK_DELAY;
 				work = 1;
 				mdwc->vbus_retry_count++;
 			} else if (ret) {
 				dev_err(mdwc->dev, "unable to start host\n");
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 				mdwc->otg_state = OTG_STATE_A_IDLE;
+#else /*ODM_WT_EDIT*/
+				mdwc->drd_state = DRD_STATE_HOST_IDLE;
+#endif /*ODM_WT_EDIT*/
 				goto ret;
 			}
 		}
 		break;
 
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	case OTG_STATE_A_HOST:
+#else /*ODM_WT_EDIT*/
+	case DRD_STATE_HOST:
+#endif /*ODM_WT_EDIT*/
 		if (test_bit(ID, &mdwc->inputs) || mdwc->hc_died) {
 			dev_dbg(mdwc->dev, "id || hc_died\n");
 			dwc3_otg_start_host(mdwc, 0);
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 			mdwc->otg_state = OTG_STATE_B_IDLE;
+#else /*ODM_WT_EDIT*/
+			mdwc->drd_state = DRD_STATE_IDLE;
+#endif /*ODM_WT_EDIT*/
 			mdwc->vbus_retry_count = 0;
 			mdwc->hc_died = false;
 			work = 1;
@@ -4582,7 +4805,12 @@ static int dwc3_msm_pm_restore(struct device *dev)
 	pm_runtime_enable(dev);
 
 	/* Restore PHY flags if hibernated in host mode */
+#ifndef ODM_WT_EDIT
+/*Hanxing.Duan@ODM.RH.BSP.USB.Basic add usb wakeup event PATCH*/
 	if (mdwc->otg_state == OTG_STATE_A_HOST) {
+#else /*ODM_WT_EDIT*/
+	if (mdwc->drd_state == DRD_STATE_HOST) {
+#endif /*ODM_WT_EDIT*/
 		usb_phy_notify_connect(mdwc->hs_phy, USB_SPEED_HIGH);
 		mdwc->hs_phy->flags |= PHY_HOST_MODE;
 		if (mdwc->ss_phy) {
