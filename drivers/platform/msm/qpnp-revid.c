@@ -128,6 +128,9 @@ EXPORT_SYMBOL(get_revid_data);
 #define PMD9655_PERIPHERAL_SUBTYPE	0x0F
 #define PMI8950_PERIPHERAL_SUBTYPE	0x11
 #define PMI8937_PERIPHERAL_SUBTYPE	0x37
+#ifdef ODM_WT_EDIT
+extern void devinfo_info_set(char *name, char *version, char *manufacture);
+#endif /* ODM_WT_EDIT */
 static size_t build_pmic_string(char *buf, size_t n, int sid,
 		u8 subtype, u8 rev1, u8 rev2, u8 rev3, u8 rev4)
 {
@@ -155,6 +158,17 @@ static size_t build_pmic_string(char *buf, size_t n, int sid,
 		pos += snprintf(buf + pos, n - pos, ".%d", rev2);
 	if (rev1)
 		pos += snprintf(buf + pos, n - pos, ".%d", rev1);
+
+	#ifdef ODM_WT_EDIT
+	if ((int)subtype == PM8953_SUBTYPE) {
+		devinfo_info_set("PMIC660", buf + 11, "Qualcomm");
+	}
+	if ((int)subtype == PMI632_SUBTYPE) {
+		devinfo_info_set("PMIC660L", buf + 11, "Qualcomm");
+		devinfo_info_set("gauge", buf + 11, "Qualcomm");
+	}
+	#endif /* ODM_WT_EDIT */
+
 	return pos;
 }
 

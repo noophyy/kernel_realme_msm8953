@@ -107,7 +107,7 @@
 #define QPNP_VADC_CONV_TIMEOUT_ERR				2
 #define QPNP_VADC_CONV_TIME_MIN					1000
 #define QPNP_VADC_CONV_TIME_MAX					1100
-#define QPNP_ADC_COMPLETION_TIMEOUT				HZ
+#define QPNP_ADC_COMPLETION_TIMEOUT				msecs_to_jiffies(100)
 #define QPNP_VADC_ERR_COUNT					20
 #define QPNP_OP_MODE_SHIFT					3
 
@@ -166,6 +166,7 @@
 #define QPNP_VADC_CAL_DELAY_CTL_1					0x3744
 #define QPNP_VADC_CAL_DELAY_MEAS_SLOW					0x73
 #define QPNP_VADC_CAL_DELAY_MEAS_DEFAULT				0x3
+
 
 struct qpnp_vadc_mode_state {
 	bool				meas_int_mode;
@@ -510,7 +511,11 @@ static int qpnp_vadc_hc_pre_configure_usb_in(struct qpnp_vadc_chip *vadc,
 						int dt_index)
 {
 	int rc = 0;
+#ifndef ODM_WT_EDIT
 	u8 buf;
+#else /*ODM_WT_EDIT*/
+	u8 buf, check = 0;
+#endif /*ODM_WT_EDIT*/
 	u8 dig_param = 0;
 	struct qpnp_adc_amux_properties conv;
 	bool channel_check = false;
@@ -553,6 +558,18 @@ static int qpnp_vadc_hc_pre_configure_usb_in(struct qpnp_vadc_chip *vadc,
 	if (rc < 0)
 		return rc;
 
+#ifdef ODM_WT_EDIT
+	rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_HC1_EN_CTL1, &check, 1);
+	if (rc < 0) {
+		pr_err("qpnp adc configure block read failed\n");
+		return rc;
+	}
+
+	if (check != buf)
+		pr_err("Peripheral enable fails for GND for USB_IN_V written:0x%x, read back:0x%x\n",
+					buf, check);
+#endif /*ODM_WT_EDIT*/
+
 	if (!vadc->vadc_poll_eoc)
 		reinit_completion(&vadc->adc->adc_rslt_completion);
 
@@ -566,6 +583,18 @@ static int qpnp_vadc_hc_pre_configure_usb_in(struct qpnp_vadc_chip *vadc,
 				&dig_param, 1);
 	if (rc < 0)
 		return rc;
+
+#ifdef ODM_WT_EDIT
+	rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, &check, 1);
+	if (rc < 0) {
+		pr_err("qpnp adc configure block read failed\n");
+		return rc;
+	}
+
+	if (check != (dig_param & 0x7c))
+		pr_err("Dig param write fails for USB_IN_V, written:0x%x, read back:0x%x\n",
+					dig_param, check);
+#endif /*ODM_WT_EDIT*/
 
 	buf = VADC_USB_IN_V_DIV_16_PM5;
 	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_ADC_CH_SEL_CTL, &buf, 1);
@@ -598,8 +627,13 @@ static int qpnp_vadc_hc_pre_configure_usb_in(struct qpnp_vadc_chip *vadc,
 static int qpnp_vadc_hc_configure(struct qpnp_vadc_chip *vadc,
 				struct qpnp_adc_amux_properties *amux_prop)
 {
+#ifndef ODM_WT_EDIT
 	int rc = 0;
 	u8 buf[5];
+#else /*ODM_WT_EDIT*/
+	int rc = 0, i = 0;
+	u8 buf[5], check[5];
+#endif /*ODM_WT_EDIT*/
 	u8 conv_req = 0;
 	bool channel_check = false;
 
@@ -640,17 +674,63 @@ static int qpnp_vadc_hc_configure(struct qpnp_vadc_chip *vadc,
 	pr_debug("dig:0x%x, fast_avg:0x%x, channel:0x%x, hw_settle:0x%x\n",
 		buf[0], buf[1], buf[2], buf[3]);
 
+#ifndef ODM_WT_EDIT
 	/* Block register write from 0x42 through 0x46 */
 	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, buf, 5);
 	if (rc < 0) {
 		pr_err("qpnp adc block register configure failed\n");
 		return rc;
 	}
+#else /*ODM_WT_EDIT*/
+	/* Register write from 0x42 through 0x46 */
+	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, &buf[0], 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed for dig_param\n");
+		return rc;
+	}
+
+	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_FAST_AVG_CTL, &buf[1], 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed for fast_avg\n");
+		return rc;
+	}
+
+	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_ADC_CH_SEL_CTL, &buf[2], 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed for ch_sel\n");
+		return rc;
+	}
+
+	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_DELAY_CTL, &buf[3], 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed for delay\n");
+		return rc;
+	}
+
+	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_EN_CTL1, &buf[4], 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed for peripheral enable\n");
+		return rc;
+	}
+#endif /*ODM_WT_EDIT*/
 
 	if (channel_check) {
 		rc = qpnp_vadc_channel_check(vadc, buf[2]);
 		if (rc)
 			return rc;
+
+#ifdef ODM_WT_EDIT
+		rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, check, 5);
+		if (rc < 0) {
+			pr_err("qpnp adc configure block read failed\n");
+			return rc;
+		}
+
+		for (i = 0;i < 5;i++)
+			if (buf[i] != check[i])
+				pr_err("Reg 0x%x wrong: written:0x%x, read back:0x%x",
+						(0x42 + i), buf[i], check[i]);
+#endif /*ODM_WT_EDIT*/
 	}
 
 	rc = qpnp_vadc_write_reg(vadc, QPNP_VADC_HC1_CONV_REQ,
@@ -742,7 +822,12 @@ int32_t qpnp_vadc_hc_read(struct qpnp_vadc_chip *vadc,
 				QPNP_VADC_CAL_DELAY_CTL_1, &val, 1);
 		if (rc < 0) {
 			pr_err("qpnp adc write cal_delay failed with %d\n", rc);
+#ifdef ODM_WT_EDIT
+/*Hanxing.Duan@ODB.RH.BSP.CHG.Basic fix do not release adc_lock 2019.07.29*/
+			goto fail_unlock;
+#else /*ODM_WT_EDIT*/
 			return rc;
+#endif /*ODM_WT_EDIT*/
 		}
 	}
 

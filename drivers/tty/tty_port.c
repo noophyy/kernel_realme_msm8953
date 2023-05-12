@@ -486,7 +486,11 @@ int tty_port_close_start(struct tty_port *port,
 		if (tty->flow_stopped)
 			tty_driver_flush_buffer(tty);
 		if (port->closing_wait != ASYNC_CLOSING_WAIT_NONE)
+#ifdef ODM_WT_EDIT
+			tty_wait_until_sent(tty, (tty->index == 0) ? HZ : port->closing_wait);
+#else
 			tty_wait_until_sent(tty, port->closing_wait);
+#endif /* ODM_WT_EDIT */
 		if (port->drain_delay)
 			tty_port_drain_delay(port, tty);
 	}

@@ -29,7 +29,9 @@
 #include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
-
+#ifdef VENDOR_EDIT
+#include <soc/oppo/boot_mode.h>
+#endif /* VENDOR_EDIT */
 /* UART specific GENI registers */
 #define SE_UART_LOOPBACK_CFG		(0x22C)
 #define SE_UART_TX_TRANS_CFG		(0x25C)
@@ -197,6 +199,24 @@ static atomic_t uart_line_id = ATOMIC_INIT(0);
 
 static struct msm_geni_serial_port msm_geni_console_port;
 static struct msm_geni_serial_port msm_geni_serial_ports[GENI_UART_NR_PORTS];
+
+#ifdef VENDOR_EDIT
+static bool boot_with_console(void)
+{
+#ifdef CONFIG_OPPO_DAILY_BUILD
+	return true;
+#else
+	if(get_boot_mode() == MSM_BOOT_MODE__FACTORY)
+		return true;
+	else {
+		if(oem_get_uartlog_status() == true)
+			return true;
+		else
+			return false;
+	}
+#endif /* CONFIG_OPPO_DAILY_BUILD */
+}
+#endif /* VENDOR_EDIT */
 
 static void msm_geni_serial_config_port(struct uart_port *uport, int cfg_flags)
 {
@@ -712,6 +732,12 @@ __msm_geni_serial_console_write(struct uart_port *uport, const char *s,
 	int bytes_to_send = count;
 	int fifo_depth = DEF_FIFO_DEPTH_WORDS;
 	int tx_wm = DEF_TX_WM;
+
+#ifdef VENDOR_EDIT
+	if (boot_with_console() == false) {
+		return;
+	}
+#endif
 
 	for (i = 0; i < count; i++) {
 		if (s[i] == '\n')
@@ -2197,6 +2223,17 @@ static struct uart_driver msm_geni_console_driver = {
 	.nr =  GENI_UART_NR_PORTS,
 	.cons = &cons_ops,
 };
+
+#ifdef VENDOR_EDIT
+static struct uart_driver msm_geni_console_driver_no_cons = {
+	.owner = THIS_MODULE,
+	.driver_name = "msm_geni_console",
+	.dev_name = "ttyMSM",
+	.nr =  GENI_UART_NR_PORTS,
+	.cons = NULL,
+};
+#endif
+
 #else
 static int console_register(struct uart_driver *drv)
 {
@@ -2341,6 +2378,15 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "%s: No matching device found", __func__);
 		return -ENODEV;
 	}
+
+#ifdef VENDOR_EDIT
+	if (boot_with_console() == false) {
+		if (drv->cons) {
+			dev_info(&pdev->dev, "boot with console false\n");
+			return -ENODEV;
+		}
+	}
+#endif
 
 	if (pdev->dev.of_node) {
 		if (drv->cons)
@@ -2516,7 +2562,7 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 		pm_runtime_enable(&pdev->dev);
 	}
 
-	dev_info(&pdev->dev, "Serial port%d added.FifoSize %d is_console%d\n",
+	dev_info(&pdev->dev, "Serial port%d added.FifoSize %d is_console %d\n",
 				line, uport->fifosize, is_console);
 	device_create_file(uport->dev, &dev_attr_loopback);
 	device_create_file(uport->dev, &dev_attr_xfer_mode);
@@ -2720,20 +2766,45 @@ static int __init msm_geni_serial_init(void)
 		msm_geni_console_port.uport.flags = UPF_BOOT_AUTOCONF;
 		msm_geni_console_port.uport.line = i;
 	}
-
+#ifdef VENDOR_EDIT
+	if (boot_with_console() == true) {
+		ret = console_register(&msm_geni_console_driver);
+	} else {
+		ret = console_register(&msm_geni_console_driver_no_cons);
+	}
+	if (ret)
+		return ret;
+#else
 	ret = console_register(&msm_geni_console_driver);
 	if (ret)
 		return ret;
+#endif
 
 	ret = uart_register_driver(&msm_geni_serial_hs_driver);
 	if (ret) {
+	#ifdef VENDOR_EDIT
+		if (boot_with_console() == true) {
+			uart_unregister_driver(&msm_geni_console_driver);
+		} else {
+			uart_unregister_driver(&msm_geni_console_driver_no_cons);
+		}
+	#else
 		uart_unregister_driver(&msm_geni_console_driver);
+	#endif
 		return ret;
 	}
 
 	ret = platform_driver_register(&msm_geni_serial_platform_driver);
 	if (ret) {
+	#ifdef VENDOR_EDIT
+		if (boot_with_console() == true) {
+			console_unregister(&msm_geni_console_driver);
+		} else {
+			console_unregister(&msm_geni_console_driver_no_cons);
+		}
+	#else
 		console_unregister(&msm_geni_console_driver);
+	#endif
 		uart_unregister_driver(&msm_geni_serial_hs_driver);
 		return ret;
 	}
@@ -2747,7 +2818,15 @@ static void __exit msm_geni_serial_exit(void)
 {
 	platform_driver_unregister(&msm_geni_serial_platform_driver);
 	uart_unregister_driver(&msm_geni_serial_hs_driver);
+#ifdef VENDOR_EDIT
+	if (boot_with_console() == true) {
+		console_unregister(&msm_geni_console_driver);
+	} else {
+		console_unregister(&msm_geni_console_driver_no_cons);
+	}
+#else
 	console_unregister(&msm_geni_console_driver);
+#endif
 }
 module_exit(msm_geni_serial_exit);
 

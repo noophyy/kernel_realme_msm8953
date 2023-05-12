@@ -5369,6 +5369,22 @@ static int iris_vidioc_querycap(struct file *file, void *priv,
 	return 0;
 }
 
+#ifdef ODM_WT_EDIT
+static int  hci_fm_set_bend_tbl_default(struct radio_hci_dev *hdev, unsigned long param)
+{
+	int retval = 0;
+	struct iris_device *radio = video_get_drvdata(video_get_dev());
+	retval = hci_cmd(HCI_FM_GET_BLND_TBL_CMD, radio->fm_hdev);
+	if(retval < 0) {
+	   FMDERR("Failed to get blend table %d ",retval);
+	   return -EINVAL ;
+	}
+    radio->blend_tbl.scBlendSinrHi = 24;
+    pr_warning(" %s; SinrHi=%d, RmssiHi=%d\n", __func__,radio->blend_tbl.scBlendSinrHi,radio->blend_tbl.scBlendRmssiHi);
+    return hci_set_blend_tbl_req(&radio->blend_tbl,radio->fm_hdev);
+}
+#endif
+
 static int initialise_recv(struct iris_device *radio)
 {
 	int retval;
@@ -5411,6 +5427,11 @@ static int initialise_recv(struct iris_device *radio)
 	retval = hci_cmd(HCI_FM_GET_RECV_CONF_CMD, radio->fm_hdev);
 	if (retval < 0)
 		FMDERR("Failed to get the Recv Config\n");
+#ifdef ODM_WT_EDIT
+	retval = hci_fm_set_bend_tbl_default((struct radio_hci_dev *)radio->fm_hdev,(unsigned long) 0);
+     if (retval < 0)
+	FMDERR("Failed to  configure default Stereo Threshol \n");
+#endif
 	return retval;
 }
 

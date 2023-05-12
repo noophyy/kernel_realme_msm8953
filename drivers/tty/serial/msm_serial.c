@@ -39,6 +39,9 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/wait.h>
+#ifdef VENDOR_EDIT
+#include <soc/oppo/boot_mode.h>
+#endif /* VENDOR_EDIT */
 
 #define UART_MR1			0x0000
 
@@ -193,6 +196,30 @@ struct msm_port {
 };
 
 #define UART_TO_MSM(uart_port)	container_of(uart_port, struct msm_port, uart)
+#ifdef VENDOR_EDIT
+static bool boot_with_console(void)
+{
+#if defined(WT_COMPILE_FACTORY_VERSION)
+	if(oem_get_uartlog_status() == true)
+		return true;
+	if(get_boot_mode() == MSM_BOOT_MODE__FACTORY)
+		return true;
+	else
+        return false;
+#else /* WT_COMPILE_FACTORY_VERSION */
+#ifdef CONFIG_OPPO_DAILY_BUILD
+	return true;
+#else
+	if(oem_get_uartlog_status() == true)
+		return true;
+	if(get_boot_mode() == MSM_BOOT_MODE__FACTORY)
+		return true;
+	else 
+        return false;
+#endif /* CONFIG_OPPO_DAILY_BUILD */
+#endif /* WT_COMPILE_FACTORY_VERSION */
+}
+#endif /* VENDOR_EDIT */
 
 static
 void msm_write(struct uart_port *port, unsigned int val, unsigned int off)
@@ -1500,7 +1527,12 @@ static int msm_poll_get_char(struct uart_port *port)
 	u32 imr;
 	int c;
 	struct msm_port *msm_port = UART_TO_MSM(port);
-
+	
+#ifdef VENDOR_EDIT
+	if(boot_with_console() == false) {
+		return 0;
+	}
+#endif /* VENDOR_EDIT */
 	/* Disable all interrupts */
 	imr = msm_read(port, UART_IMR);
 	msm_write(port, 0, UART_IMR);
@@ -1520,6 +1552,12 @@ static void msm_poll_put_char(struct uart_port *port, unsigned char c)
 {
 	u32 imr;
 	struct msm_port *msm_port = UART_TO_MSM(port);
+	
+#ifdef VENDOR_EDIT
+	if(boot_with_console() == false) {
+		return;
+	}
+#endif /* VENDOR_EDIT */
 
 	/* Disable all interrupts */
 	imr = msm_read(port, UART_IMR);
@@ -1614,6 +1652,11 @@ static void __msm_console_write(struct uart_port *port, const char *s,
 	bool replaced = false;
 	void __iomem *tf;
 
+#ifdef VENDOR_EDIT
+	if(boot_with_console() == false) {
+		return;
+	}
+#endif /* VENDOR_EDIT */
 	if (is_uartdm)
 		tf = port->membase + UARTDM_TF;
 	else
@@ -1773,6 +1816,16 @@ static struct uart_driver msm_uart_driver = {
 	.cons = MSM_CONSOLE,
 };
 
+#ifdef VENDOR_EDIT
+static struct uart_driver msm_uart_driver_no_console = {
+	.owner = THIS_MODULE,
+	.driver_name = "msm_serial",
+	.dev_name = "ttyMSM",
+	.nr = UART_NR,
+	.cons = NULL,
+};
+#endif /* VENDOR_EDIT */
+
 static atomic_t msm_uart_next_id = ATOMIC_INIT(0);
 
 static const struct of_device_id msm_uartdm_table[] = {
@@ -1802,6 +1855,12 @@ static int msm_serial_probe(struct platform_device *pdev)
 	if (unlikely(line < 0 || line >= UART_NR))
 		return -ENXIO;
 
+#ifdef VENDOR_EDIT
+	if(boot_with_console() == false) {
+		dev_info(&pdev->dev, "boot with console false\n");
+		return -ENODEV;
+	}
+#endif /* VENDOR_EDIT */
 	dev_info(&pdev->dev, "msm_serial: detected port #%d\n", line);
 
 	port = msm_get_port_from_line(line);
@@ -1839,14 +1898,30 @@ static int msm_serial_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, port);
 
+#ifndef VENDOR_EDIT
 	return uart_add_one_port(&msm_uart_driver, port);
+#else
+	if(boot_with_console() == true) {
+		return uart_add_one_port(&msm_uart_driver, port);
+	} else {
+		return uart_add_one_port(&msm_uart_driver_no_console, port);
+	}
+#endif /* VENDOR_EDIT */
 }
 
 static int msm_serial_remove(struct platform_device *pdev)
 {
 	struct uart_port *port = platform_get_drvdata(pdev);
 
+#ifndef VENDOR_EDIT
 	uart_remove_one_port(&msm_uart_driver, port);
+#else
+	if(boot_with_console() == true) {
+		uart_remove_one_port(&msm_uart_driver, port);
+	} else {
+		uart_remove_one_port(&msm_uart_driver_no_console, port);
+	}
+#endif /* VENDOR_EDIT */
 
 	return 0;
 }
@@ -1862,21 +1937,34 @@ MODULE_DEVICE_TABLE(of, msm_match_table);
 static int msm_serial_suspend(struct device *dev)
 {
 	struct uart_port *port = dev_get_drvdata(dev);
-
+	
+#ifndef VENDOR_EDIT
 	uart_suspend_port(&msm_uart_driver, port);
-
+#else
+	if(boot_with_console() == true) {
+		uart_suspend_port(&msm_uart_driver, port);
+	} else {
+		uart_suspend_port(&msm_uart_driver_no_console, port);
+	}
+#endif /* VENDOR_EDIT */
 	return 0;
 }
 
 static int msm_serial_resume(struct device *dev)
 {
 	struct uart_port *port = dev_get_drvdata(dev);
-
+	
+#ifndef VENDOR_EDIT
 	uart_resume_port(&msm_uart_driver, port);
-
+#else
+	if(boot_with_console() == true) {
+		uart_resume_port(&msm_uart_driver, port);
+	} else {
+		uart_resume_port(&msm_uart_driver_no_console, port);
+	}
+#endif /* VENDOR_EDIT */
 	return 0;
 }
-
 static int msm_serial_freeze(struct device *dev)
 {
 	struct uart_port *port = dev_get_drvdata(dev);
@@ -1920,15 +2008,32 @@ static struct platform_driver msm_platform_driver = {
 static int __init msm_serial_init(void)
 {
 	int ret;
-
+	
+#ifndef VENDOR_EDIT
 	ret = uart_register_driver(&msm_uart_driver);
+#else
+	if(boot_with_console() == true) {
+		ret = uart_register_driver(&msm_uart_driver);
+	} else {
+		ret = uart_register_driver(&msm_uart_driver_no_console);
+	}
+#endif /* VENDOR_EDIT */
 	if (unlikely(ret))
 		return ret;
 
 	ret = platform_driver_register(&msm_platform_driver);
+#ifndef VENDOR_EDIT
 	if (unlikely(ret))
 		uart_unregister_driver(&msm_uart_driver);
-
+#else
+	if (unlikely(ret)) {
+		if(boot_with_console() == true) {
+			uart_unregister_driver(&msm_uart_driver);
+		} else {
+			uart_unregister_driver(&msm_uart_driver_no_console);
+		}
+	}
+#endif /* VENDOR_EDIT */
 	pr_info("msm_serial: driver initialized\n");
 
 	return ret;
@@ -1937,7 +2042,15 @@ static int __init msm_serial_init(void)
 static void __exit msm_serial_exit(void)
 {
 	platform_driver_unregister(&msm_platform_driver);
+#ifndef VENDOR_EDIT
 	uart_unregister_driver(&msm_uart_driver);
+#else
+	if(boot_with_console() == true) {
+		uart_unregister_driver(&msm_uart_driver);
+	} else {
+		uart_unregister_driver(&msm_uart_driver_no_console);
+	}
+#endif /* VENDOR_EDIT */
 }
 
 module_init(msm_serial_init);

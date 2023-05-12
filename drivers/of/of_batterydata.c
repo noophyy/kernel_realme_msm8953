@@ -19,6 +19,10 @@
 #include <linux/types.h>
 #include <linux/batterydata-lib.h>
 #include <linux/power_supply.h>
+#ifdef ODM_WT_EDIT
+#include <linux/hardware_info.h>
+#endif /* ODM_WT_EDIT */
+
 
 static int of_batterydata_read_lut(const struct device_node *np,
 			int max_cols, int max_rows, int *ncols, int *nrows,
@@ -390,10 +394,19 @@ struct device_node *of_batterydata_get_best_profile(
 
 	rc = of_property_read_string(best_node, "qcom,battery-type",
 							&battery_type);
+	#ifndef ODM_WT_EDIT
 	if (!rc)
 		pr_info("%s found\n", battery_type);
 	else
 		pr_info("%s found\n", best_node->name);
+	#else /* ODM_WT_EDIT */
+	if (!rc) {
+		pr_info("Profile:%s found.\n", battery_type);
+		hardwareinfo_set_prop(HARDWARE_BATTERY_ID, battery_type);
+	}
+	else
+		pr_info("not best node found\n");
+	#endif /* ODM_WT_EDIT */
 
 	return best_node;
 }

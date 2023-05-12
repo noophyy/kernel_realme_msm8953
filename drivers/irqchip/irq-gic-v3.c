@@ -72,6 +72,13 @@ static DECLARE_BITMAP(irqs_restore, MAX_IRQ);
  */
 static DECLARE_BITMAP(irqs_ignore_restore, MAX_IRQ);
 
+#ifdef VENDOR_EDIT
+#ifdef VENDOR_EDIT
+struct work_struct wakeup_reason_work;
+#endif /* VENDOR_EDIT */
+u16 modem_wakeup_source = 0;
+#define WLAN_WAKEUP_IRQ_NUMBER	67
+#endif //VENDOR_EDIT
 struct redist_region {
 	void __iomem		*redist_base;
 	phys_addr_t		phys_base;
@@ -725,6 +732,14 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 			name = desc->action->name;
 
 		pr_warn("%s: %d triggered %s\n", __func__, irq, name);
+		#ifdef VENDOR_EDIT
+		if (irq == WLAN_WAKEUP_IRQ_NUMBER)
+	    {
+	         pr_warn("triggered by wlan side\n");
+	         modem_wakeup_source = 0;
+             schedule_work(&wakeup_reason_work);
+		}
+		#endif //VENDOR_EDIT
 	}
 }
 

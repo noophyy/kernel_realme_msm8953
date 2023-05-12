@@ -49,9 +49,15 @@
 #include <linux/cpuset.h>
 #include <linux/vmpressure.h>
 #include <linux/freezer.h>
+#ifdef VENDOR_EDIT
+#include <linux/module.h>
+#endif /* VENDOR_EDIT */
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/almk.h>
+#ifdef VENDOR_EDIT
+#include <linux/proc_fs.h>
+#endif /*VENDOR_EDIT*/
 #include <linux/show_mem_notifier.h>
 
 #ifdef CONFIG_HIGHMEM
@@ -62,6 +68,19 @@
 
 #define CREATE_TRACE_POINTS
 #include "trace/lowmemorykiller.h"
+#ifdef VENDOR_EDIT
+#include "oppo_lowmemorymonitor.h"
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+static struct kobject *lmk_module_kobj = NULL;
+static struct work_struct lowmemorykiller_work;
+static char *lmklowmem[2] = { "LMK=LOWMEM", NULL };
+static int uevent_threshold[6] = {0, 0, 0, 0, }; // 1: 58, 2: 117, 3: 176
+static int last_selected_adj = 0;
+static void lowmemorykiller_uevent(short adj, int index);
+static void lowmemorykiller_work_func(struct work_struct *work);
+#endif /* VENDOR_EDIT */
 
 /* to enable lowmemorykiller */
 static int enable_lmk = 1;
@@ -85,6 +104,11 @@ static int lowmem_minfree[6] = {
 
 static int lowmem_minfree_size = 4;
 static int lmk_fast_run = 1;
+#ifdef VENDOR_EDIT
+static bool lmk_cnt_enable = false;
+static unsigned long adaptive_lowmem_kill_count = 0;
+static unsigned long tatal_lowmem_kill_count = 0;
+#endif /*VENDOR_EDIT*/
 
 static unsigned long lowmem_deathpending_timeout;
 
@@ -134,9 +158,61 @@ enum {
 	VMPRESSURE_ADJUST_NORMAL,
 };
 
+
+#ifdef VENDOR_EDIT
+#define ALMK_NR_PAGES_1GB (SZ_1G >> PAGE_SHIFT)
+
+
+struct almk_mem_info {
+	long pages_swap;
+	unsigned long pages_anon;
+	unsigned long pages_file;
+	short adj;
+};
+
+#define ALMK_MEM_INFO_TABLE_1_NUM 4
+static struct almk_mem_info almk_mem_info_table_1[ALMK_MEM_INFO_TABLE_1_NUM] = {
+	{
+		.pages_swap		= ((ALMK_NR_PAGES_1GB*800)/1024),
+		.pages_anon		= ((ALMK_NR_PAGES_1GB*20)/1024),
+		.pages_file		= ((ALMK_NR_PAGES_1GB*2000)/1024),
+		.adj		= 404,
+	},
+	{
+		.pages_swap		= ((ALMK_NR_PAGES_1GB*950)/1024),
+		.pages_anon		= ((ALMK_NR_PAGES_1GB*20)/1024),
+		.pages_file		= ((ALMK_NR_PAGES_1GB*2500)/1024),
+		.adj		= 300,
+	},
+	{
+		.pages_swap		= ((ALMK_NR_PAGES_1GB*1100)/1024),
+		.pages_anon		= ((ALMK_NR_PAGES_1GB*20)/1024),
+		.pages_file		= ((ALMK_NR_PAGES_1GB*2300)/1024),
+		.adj		= 200,
+	},
+	{
+		.pages_swap		= ((ALMK_NR_PAGES_1GB*1200)/1024),
+		.pages_anon		= ((ALMK_NR_PAGES_1GB*20)/1024),
+		.pages_file		= ((ALMK_NR_PAGES_1GB*2000)/1024),
+		.adj		= 100,
+	}
+};
+
+#define ALMK_ADJUST_MINADJ_LEVEL_INVALID 0xff
+static int almk_adjust_minadj_level = ALMK_ADJUST_MINADJ_LEVEL_INVALID;
+
+#endif
+
 static int adjust_minadj(short *min_score_adj)
 {
 	int ret = VMPRESSURE_NO_ADJUST;
+#ifdef VENDOR_EDIT
+	long almk_pages_swap = total_swap_pages - get_nr_swap_pages();
+	unsigned long almk_pages_anon = global_node_page_state(NR_ACTIVE_ANON) + global_node_page_state(NR_INACTIVE_ANON);
+	unsigned long almk_pages_file = global_node_page_state(NR_ACTIVE_FILE) + global_node_page_state(NR_INACTIVE_FILE);
+
+	almk_adjust_minadj_level = ALMK_ADJUST_MINADJ_LEVEL_INVALID;
+#endif /*VENDOR_EDIT*/
 
 	if (!enable_adaptive_lmk)
 		return 0;
@@ -148,7 +224,42 @@ static int adjust_minadj(short *min_score_adj)
 		else
 			ret = VMPRESSURE_ADJUST_NORMAL;
 		*min_score_adj = adj_max_shift;
+#ifdef VENDOR_EDIT
+/*Maybe it can not select task to kill, it's just a rough number */
+		if (lmk_cnt_enable)
+			adaptive_lowmem_kill_count++;
 	}
+#endif /*VENDOR_EDIT*/
+
+#ifdef VENDOR_EDIT
+	if (totalram_pages <= (ALMK_NR_PAGES_1GB*2)) {
+		int i;
+
+		if (atomic_read(&shift_adj)) {
+
+			for (i = 0; i < ALMK_MEM_INFO_TABLE_1_NUM; i++) {
+
+				//printk("almk_mem_info_table_1:%d, swap=%ld, anon=%lu, file=%lu,adj:%d \n",
+				//	i,
+				//	almk_mem_info_table_1[i].pages_swap, almk_mem_info_table_1[i].pages_anon,
+				//	almk_mem_info_table_1[i].pages_file, almk_mem_info_table_1[i].adj);
+
+				if ((*min_score_adj > almk_mem_info_table_1[i].adj) &&
+					(almk_pages_swap > almk_mem_info_table_1[i].pages_swap) &&
+					(almk_pages_anon > almk_mem_info_table_1[i].pages_anon) &&
+					(almk_pages_file < almk_mem_info_table_1[i].pages_file)) {
+
+						almk_adjust_minadj_level = i+1;
+						//printk("adjust_minadj:almk_pages_swap=%ld, almk_pages_anon=%lu, almk_pages_file=%lu,level:%d \n",
+						//	almk_pages_swap, almk_pages_anon, almk_pages_file, almk_adjust_minadj_level);
+
+						*min_score_adj = almk_mem_info_table_1[i].adj;
+				}
+			}
+		}
+	}
+
+#endif /*VENDOR_EDIT*/
 	atomic_set(&shift_adj, 0);
 
 	return ret;
@@ -434,6 +545,20 @@ void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 	}
 }
 
+#ifdef VENDOR_EDIT
+static void orphan_foreground_task_kill(struct task_struct *task, short adj, short min_score_adj)
+{
+		if (min_score_adj == 0)
+		return;
+
+		if (task->parent->pid == 1 && adj == 0) {
+		lowmem_print(1, "kill orphan foreground task %s, pid %d, adj %hd, min_score_adj %hd\n",
+			task->comm, task->pid, adj, min_score_adj);
+		send_sig(SIGKILL, task, 0);
+		}
+}
+#endif /* VENDOR_EDIT */
+
 static void mark_lmk_victim(struct task_struct *tsk)
 {
 	struct mm_struct *mm = tsk->mm;
@@ -443,6 +568,45 @@ static void mark_lmk_victim(struct task_struct *tsk)
 		set_bit(MMF_OOM_VICTIM, &mm->flags);
 	}
 }
+
+#ifdef VENDOR_EDIT
+static ssize_t lowmem_kill_count_proc_read(struct file *file, char __user *buf,
+		size_t count,loff_t *off)
+{
+	char page[256] = {0};
+	int len = 0;
+
+	if (!lmk_cnt_enable)
+		return 0;
+
+	len = sprintf(&page[len],"adaptive_lowmem_kill_count:%lu\ntotal_lowmem_kill_count:%lu\n",
+				adaptive_lowmem_kill_count, tatal_lowmem_kill_count);
+
+	if(len > *off)
+	   len -= *off;
+	else
+	   len = 0;
+
+	if(copy_to_user(buf,page,(len < count ? len : count))){
+	   return -EFAULT;
+	}
+	*off += len < count ? len : count;
+	return (len < count ? len : count);
+
+}
+
+struct file_operations lowmem_kill_count_proc_fops = {
+	.read = lowmem_kill_count_proc_read,
+};
+
+static int __init setup_lowmem_killinfo(void)
+{
+
+	proc_create("lowmemkillcounts", S_IRUGO, NULL, &lowmem_kill_count_proc_fops);
+	return 0;
+}
+module_init(setup_lowmem_killinfo);
+#endif /* VENDOR_EDIT */
 
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
@@ -547,16 +711,53 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			if (!p)
 				continue;
 		}
+#ifdef VENDOR_EDIT
+		if (p->state & TASK_UNINTERRUPTIBLE) {
+			task_unlock(p);
+			continue;
+		}
+		//resolve kill coredump process, it may continue long time
+		if (p->signal != NULL && (p->signal->flags & SIGNAL_GROUP_COREDUMP) ){
+			task_unlock(p);
+			continue;
+		}
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+		if (p->state & TASK_UNINTERRUPTIBLE) {
+			task_unlock(p);
+			continue;
+		}
+		//resolve kill coredump process, it may continue long time
+		if (p->signal != NULL && (p->signal->flags & SIGNAL_GROUP_COREDUMP) ){
+			task_unlock(p);
+			continue;
+		}
+#endif /* VENDOR_EDIT */
 
 		oom_score_adj = p->signal->oom_score_adj;
 		if (oom_score_adj < min_score_adj) {
+#ifdef VENDOR_EDIT
+			tasksize = get_mm_rss(p->mm);
+#endif /* VENDOR_EIDT */
 			task_unlock(p);
+#ifdef VENDOR_EDIT
+			if (tasksize > 0) {
+				orphan_foreground_task_kill(p, oom_score_adj, min_score_adj);
+			}
+			oppo_lowmemory_detect(p, tasksize);
+#endif /* VENDOR_EIDT */
 			continue;
 		}
 		tasksize = get_mm_rss(p->mm);
 		task_unlock(p);
 		if (tasksize <= 0)
 			continue;
+#ifdef VENDOR_EDIT
+		if (oppo_lowmemory_detect(p, tasksize)) {
+			continue;
+		}
+#endif /* VENDOR_EDIT */
 		if (selected) {
 			if (oom_score_adj < selected_oom_score_adj)
 				continue;
@@ -597,6 +798,15 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		}
 		task_unlock(selected);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
+#ifdef VENDOR_EDIT
+		if (lmk_cnt_enable)
+			tatal_lowmem_kill_count++;
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+		if (ALMK_ADJUST_MINADJ_LEVEL_INVALID != almk_adjust_minadj_level)
+			lowmem_print(1, "almk_adjust_minadj_level=%d\n", almk_adjust_minadj_level);
+#endif /* VENDOR_EDIT */
 		lowmem_print(1, "Killing '%s' (%d) (tgid %d), adj %hd,\n"
 			"to free %ldkB on behalf of '%s' (%d) because\n"
 			"cache %ldkB is below limit %ldkB for oom score %hd\n"
@@ -622,11 +832,73 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			(long)(PAGE_SIZE / 1024),
 			sc->gfp_mask);
 
-		if (lowmem_debug_level >= 2 && selected_oom_score_adj == 0) {
+#ifdef VENDOR_EDIT
 			show_mem(SHOW_MEM_FILTER_NODES);
-			show_mem_call_notifiers();
+#endif /*VENDOR_EDIT*/
+
+		if (lowmem_debug_level >= 2 && selected_oom_score_adj == 0) {
+#ifndef VENDOR_EDIT
+			show_mem(SHOW_MEM_FILTER_NODES);
+#endif /*VENDOR_EDIT*/
 			dump_tasks(NULL, NULL);
 		}
+#ifdef VENDOR_EDIT
+		if (selected_oom_score_adj == 0) {
+			lowmem_print(1, "Killing %s, adj is %hd, so send uevent to userspace\n",
+					selected->comm, selected_oom_score_adj);
+			schedule_work(&lowmemorykiller_work);
+		} else {
+			for (i = 1; i < 3; i++) {
+				if (selected_oom_score_adj == lowmem_adj[i]) {
+					//uevent must be continuous adj record
+					if (last_selected_adj != selected_oom_score_adj) {
+						last_selected_adj = selected_oom_score_adj;
+						uevent_threshold[i] = 0;
+						break;
+					}
+					uevent_threshold[i]++;
+					if (uevent_threshold[i] == i * 5) {
+						dump_tasks(NULL, NULL);
+						lowmemorykiller_uevent(selected_oom_score_adj, i);
+						uevent_threshold[i] = 0;
+					}
+					break;
+				}
+			}
+		}
+#ifdef CONFIG_OPPO_SPECIAL_BUILD
+		if (min_score_adj == 0) {
+			lowmem_print(1, "min_score_adj is 0, so send uevent to userspace\n");
+			dump_tasks(NULL, NULL);
+			schedule_work(&lowmemorykiller_work);
+		}
+#endif
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+		if (selected_oom_score_adj == 0) {
+			lowmem_print(1, "Killing %s, adj is %hd, so send uevent to userspace\n",
+					selected->comm, selected_oom_score_adj);
+			schedule_work(&lowmemorykiller_work);
+		} else {
+			for (i = 1; i < 3; i++) {
+				if (selected_oom_score_adj == lowmem_adj[i]) {
+					//uevent must be continuous adj record
+					if (last_selected_adj != selected_oom_score_adj) {
+						last_selected_adj = selected_oom_score_adj;
+						uevent_threshold[i] = 0;
+						break;
+					}
+					uevent_threshold[i]++;
+					if (uevent_threshold[i] == i * 5) {
+						lowmemorykiller_uevent(selected_oom_score_adj, i);
+						uevent_threshold[i] = 0;
+					}
+					break;
+				}
+			}
+		}
+#endif /* VENDOR_EDIT */
 
 		lowmem_deathpending_timeout = jiffies + HZ;
 		rem += selected_tasksize;
@@ -647,6 +919,19 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	return rem;
 }
 
+#ifdef VENDOR_EDIT
+void lowmemorykiller_work_func(struct work_struct *work)
+{
+	kobject_uevent_env(lmk_module_kobj, KOBJ_CHANGE, lmklowmem);
+	lowmem_print(1, "lowmemorykiller send uevent: %s\n", lmklowmem[0]);
+}
+static void lowmemorykiller_uevent(short adj, int index)
+{
+	lowmem_print(1, "kill adj %hd more than %d times and so send uevent to userspace\n", adj, index * 5);
+	schedule_work(&lowmemorykiller_work);
+}
+#endif /* VENDOR_EDIT */
+
 static struct shrinker lowmem_shrinker = {
 	.scan_objects = lowmem_scan,
 	.count_objects = lowmem_count,
@@ -657,6 +942,11 @@ static int __init lowmem_init(void)
 {
 	register_shrinker(&lowmem_shrinker);
 	vmpressure_notifier_register(&lmk_vmpr_nb);
+#ifdef VENDOR_EDIT
+	lmk_module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
+	lowmem_print(1, "kernel obj name %s\n", lmk_module_kobj->name);
+	INIT_WORK(&lowmemorykiller_work, lowmemorykiller_work_func);
+#endif /* VENDOR_EDIT */
 	return 0;
 }
 device_initcall(lowmem_init);
@@ -755,4 +1045,8 @@ module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
 			 S_IRUGO | S_IWUSR);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
 module_param_named(lmk_fast_run, lmk_fast_run, int, S_IRUGO | S_IWUSR);
+
+#ifdef VENDOR_EDIT
+module_param_named(lmk_cnt_enable, lmk_cnt_enable, bool, S_IRUGO | S_IWUSR);
+#endif /*VENDOR_EDIT*/
 

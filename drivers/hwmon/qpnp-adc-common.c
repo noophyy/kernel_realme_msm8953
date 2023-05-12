@@ -677,6 +677,7 @@ static const struct qpnp_vadc_map_pt adcmap_batt_therm[] = {
 	{124,	980}
 };
 
+#ifndef ODM_WT_EDIT
 /* Voltage to temperature */
 static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd[] = {
 	{1840,	-400},
@@ -750,6 +751,84 @@ static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd[] = {
 	{114,	960},
 	{107,	980}
 };
+#else /* ODM_WT_EDIT */
+/* Voltage to temperature */
+//NTC 10k, Beta 3380. Add 1K resistance in NTC network. voltage to temperature
+//From the attached of 80-p3255-39_a
+//0607 update for HW test
+static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd[] = {
+	{1602,	-400},
+	{1574,	-380},
+	{1546,	-360},
+	{1517,	-340},
+	{1484,	-320},
+	{1452,	-300},
+	{1420,	-280},
+	{1383,	-260},
+	{1347,	-240},
+	{1310,	-220},
+	{1272,	-200},
+	{1233,	-180},
+	{1194,	-160},
+	{1155,	-140},
+	{1117,	-120},
+	{1077,	-100},
+	{1037,	-80},
+	{999,	-60},
+	{960,	-40},
+	{922,	-20},
+	{885,	0},
+	{848,	20},
+	{812,	40},
+	{778,	60},
+	{744,	80},
+	{711,	100},
+	{680,	120},
+	{649,	140},
+	{620,	160},
+	{592,	180},
+	{565,	200},
+	{540,	220},
+	{515,	240},
+	{489,	260},
+	{464,	280},
+	{441,	300},
+	{418,	320},
+	{396,	340},
+	{376,	360},
+	{358,	380},
+	{340,	400},
+	{324,	420},
+	{308,	440},
+	{293,	460},
+	{279,	480},
+	{266,	500},
+	{255,	520},
+	{244,	540},
+	{233,	560},
+	{223,	580},
+	{214,	600},
+	{206,	620},
+	{197,	640},
+	{190,	660},
+	{182,	680},
+	{175,	700},
+	{169,	720},
+	{164,	740},
+	{157,	760},
+	{152,	780},
+	{149,	800},
+	{143,	820},
+	{139,	840},
+	{135,	860},
+	{131,	880},
+	{128,	900},
+	{123,	920},
+	{121,	940},
+	{118,	960},
+	{115,	980}
+};
+#endif /* ODM_WT_EDIT */
 
 /* Voltage to temperature */
 static const struct qpnp_vadc_map_pt adcmap_batt_therm_qrd_215[] = {
@@ -1830,7 +1909,7 @@ int32_t qpnp_adc_scale_default(struct qpnp_vadc_chip *vadc,
 	} else {
 		qpnp_adc_scale_with_calib_param(adc_code, adc_properties,
 					chan_properties, &scale_voltage);
-		if (!chan_properties->calib_type == CALIB_ABSOLUTE)
+		if (chan_properties->calib_type)
 			scale_voltage *= 1000;
 	}
 
