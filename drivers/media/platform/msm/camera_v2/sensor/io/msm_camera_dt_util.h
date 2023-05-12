@@ -65,4 +65,10 @@ int msm_camera_pinctrl_init
 int32_t msm_sensor_driver_get_gpio_data(
 	struct msm_camera_gpio_conf **gpio_conf,
 	struct device_node *of_node);
+
+#ifdef VENDOR_EDIT
+int msm_camera_power_up_vendor(struct msm_camera_power_ctrl_t *ctrl,
+	enum msm_camera_device_type_t device_type,
+	struct msm_camera_i2c_client *sensor_i2c_client);
+#endif
 #endif

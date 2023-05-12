@@ -21,6 +21,13 @@
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
+// add for gc5005 OTP
+#define GC5025_USE_OTP
+
+#ifdef GC5025_USE_OTP
+void gc5025_gcore_identify_otp(struct msm_sensor_ctrl_t *s_ctrl);
+#endif
+
 static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl;
 static struct msm_camera_i2c_fn_t msm_sensor_secure_func_tbl;
 
@@ -244,6 +251,30 @@ static uint16_t msm_sensor_id_by_mask(struct msm_sensor_ctrl_t *s_ctrl,
 	return sensor_id;
 }
 
+#ifdef VENDOR_EDIT
+static int at_msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	if (msm_sensor_power_down(s_ctrl)< 0) {
+		pr_err("%s:%d error \n", __func__,__LINE__);
+		return -1;
+	}
+	s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
+	return 0;
+}
+static int at_msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
+{
+
+	printk("%s sensor is %s\n", __func__,s_ctrl->sensordata->sensor_name);
+
+	if (msm_sensor_power_up(s_ctrl)< 0) {
+		pr_err("%s:%d error \n", __func__,__LINE__);
+		return -1;
+	}
+	s_ctrl->sensor_state = MSM_SENSOR_POWER_UP;
+	return 0;
+}
+#endif
+
 int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
@@ -287,10 +318,17 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		return rc;
 	}
 
+#ifdef GC5025_USE_OTP
+        if(!strcmp(sensor_name, "gc5025") || !strcmp(sensor_name, "gc5025_shengtai")){
+            pr_err("in S88051AA1 project enter gc5025 otp DD");
+            gc5025_gcore_identify_otp(s_ctrl);
+            }
+#endif
+
 	pr_debug("%s: read id: 0x%x expected id 0x%x:\n",
 			__func__, chipid, slave_info->sensor_id);
 	if (msm_sensor_id_by_mask(s_ctrl, chipid) != slave_info->sensor_id) {
-		pr_err("%s chip id %x does not match %x\n",
+		pr_debug("%s chip id %x does not match %x\n",
 				__func__, chipid, slave_info->sensor_id);
 		return -ENODEV;
 	}
@@ -354,6 +392,30 @@ static long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 		pr_err("%s s_ctrl NULL\n", __func__);
 		return -EBADF;
 	}
+
+#ifdef VENDOR_EDIT
+	if (cmd == 0 && arg == NULL) {
+		rc = at_msm_sensor_power_down(s_ctrl);
+		return rc;
+	}
+#ifndef VENDOR_EDIT
+	else if (cmd ==1 && arg == NULL) {
+		rc = at_msm_sensor_power_up(s_ctrl);
+#else
+	else if (cmd ==1) {
+		rc = at_msm_sensor_power_up(s_ctrl);
+		if(rc<0){
+			pr_err("%s power up err\n", __func__);
+			return rc;
+		}
+		if(argp!=NULL){
+			memcpy((char *)argp,s_ctrl->sensordata->sensor_name,16);
+			}
+#endif
+		return rc;
+	}
+#endif
+
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_CFG:
 #ifdef CONFIG_COMPAT

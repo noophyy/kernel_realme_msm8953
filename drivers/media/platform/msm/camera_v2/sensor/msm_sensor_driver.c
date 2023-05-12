@@ -18,6 +18,48 @@
 #include "msm_cci.h"
 #include "msm_camera_dt_util.h"
 #include "msm_sensor_driver.h"
+#ifdef ODM_WT_EDIT
+#include "linux/hardware_info.h"
+#define CAM_BACK_CAMERA		0x0
+#define CAM_FRONT_CAMERA	0x1
+#define CAM_AUX_CAMERA		0x100
+
+extern int g_main_module_id;
+extern int g_front_module_id;
+extern int g_aux_module_id;
+static const char *g_module_info[]=
+{
+    "Unkonw",
+    "Sunny",
+    "Huaquan",
+    "Fushikang",
+    "Guangzhen",
+    "Daling",
+    "Xinli",
+    "O-film",
+    "Boyi",
+    "Sanglaishi",
+    "Qunhui",
+    "Q-Tech",
+    "Unknow",
+    "Unknow",
+    "Broad",
+    "Holitech",
+    "Holitech_BG",
+    "Unknow",
+    "Unknow",
+    "Unknow",
+    "Unknow",
+    "Unknow",
+    "Unknow",
+    "Shengtai",
+    "Unknow",
+    "TXD", /*0x19*/
+};
+
+extern void devinfo_info_set(char *name, char *version, char *manufacture);
+
+#endif /*ODM_WT_EDIT*/
 
 /* Logging macro */
 #undef CDBG
@@ -151,6 +193,21 @@ static int32_t msm_sensor_driver_create_v4l_subdev
 	s_ctrl->msm_sd.sd.entity.function = MSM_CAMERA_SUBDEV_SENSOR;
 	s_ctrl->msm_sd.sd.entity.name = s_ctrl->msm_sd.sd.name;
 	s_ctrl->msm_sd.close_seq = MSM_SD_CLOSE_2ND_CATEGORY | 0x3;
+
+	#ifdef VENDOR_EDIT
+	s_ctrl->msm_sd.sd.entity.group_id = MSM_CAMERA_SUBDEV_SENSOR;
+	pr_err("sensor_info->position %d", s_ctrl->sensordata->sensor_info->position);
+	if (s_ctrl->sensordata->sensor_info->position == 0) //back sensor
+	    s_ctrl->msm_sd.sd.entity.revision = 1;
+	else if (s_ctrl->sensordata->sensor_info->position == 1) //sub sensor
+	    s_ctrl->msm_sd.sd.entity.revision = 2;
+	/*oppo hufeng 20170216 add for back aux camera at test*/
+	else if (s_ctrl->sensordata->sensor_info->position == 256) //back aux sensor
+	    s_ctrl->msm_sd.sd.entity.revision = 3;
+	else
+	    s_ctrl->msm_sd.sd.entity.revision = 0;
+	#endif /* VENDOR_EDIT */
+
 	rc = msm_sd_register(&s_ctrl->msm_sd);
 	if (rc < 0) {
 		pr_err("failed: msm_sd_register rc %d", rc);
@@ -757,6 +814,12 @@ int32_t msm_sensor_driver_probe(void *setting,
 
 	unsigned long                        mount_pos = 0;
 	uint32_t                             is_yuv;
+
+#ifdef ODM_WT_EDIT
+	int32_t				i = 0;
+	struct camera_vreg_t *cam_vreg = NULL;
+#endif /* ODM_WT_EDIT */
+
 	struct msm_camera_i2c_reg_array     *reg_setting = NULL;
 	struct msm_sensor_id_info_t         *id_info = NULL;
 
@@ -963,6 +1026,100 @@ int32_t msm_sensor_driver_probe(void *setting,
 		goto free_slave_info;
 	}
 
+#ifdef ODM_WT_EDIT
+    if (!strcmp(slave_info->sensor_name, "s5k3l6")){
+        if(0x1 != g_main_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_main_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "hi1333")){
+        if(0xB != g_main_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_main_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "s5k4h7yx")){
+        if(0x1 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "s5k3p9sp")){
+        if(0x1 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "ov16885")){
+        if(0x7 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "gc8034")){
+        if(0xB != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "s5k3l6_ofilm")){
+        if(0x7 != g_main_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_main_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "gc8034_xinli")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+        /*
+        if(0x06 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+        */
+    } else if (!strcmp(slave_info->sensor_name, "s5k3p9sp_xinli")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+        /*
+        if(0x6 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+        */
+    } else if (!strcmp(slave_info->sensor_name, "hi846")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+    } else if (!strcmp(slave_info->sensor_name, "sp2509v")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+    } else if (!strcmp(slave_info->sensor_name, "gc2375h")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+    } else if (!strcmp(slave_info->sensor_name, "gc2375h_chengxiangtong")){
+        pr_err("%s:%d sensor name:%s, do nothing", __func__, __LINE__, slave_info->sensor_name);
+    } else if (!strcmp(slave_info->sensor_name, "gc5025")){
+        pr_err("gc5025 final module_id=%d", g_front_module_id);
+        if(0xF != g_front_module_id  && 0x10 != g_front_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_front_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else if (!strcmp(slave_info->sensor_name, "gc5025_shengtai")) {
+		if (0x17 != g_front_module_id) {
+			pr_err("sensor is not %s, module_id=%d", slave_info->sensor_name, g_front_module_id);
+			rc = -EINVAL;
+			goto free_slave_info;
+		}
+	} else if (!strcmp(slave_info->sensor_name, "hi1336")){
+        if(0x19 != g_main_module_id){
+            pr_err("sensor is not %s. module id=%d", slave_info->sensor_name, g_main_module_id);
+            rc = -EINVAL;
+            goto free_slave_info;
+        }
+    } else {
+        pr_err("%s:%d unknow sensor:%s do noting", __func__, __LINE__, slave_info->sensor_name);
+        rc = -EINVAL;
+        goto free_slave_info;
+    }
+#endif /* ODM_WT_EDIT */
 	/* Extract s_ctrl from camera id */
 	s_ctrl = g_sctrl[slave_info->camera_id];
 	if (!s_ctrl) {
@@ -1062,6 +1219,126 @@ int32_t msm_sensor_driver_probe(void *setting,
 	cci_client->id_map = 0;
 	cci_client->i2c_freq_mode = slave_info->i2c_freq_mode;
 
+#ifdef ODM_WT_EDIT
+	cam_vreg = s_ctrl->sensordata->power_info.cam_vreg;
+	if (!(strcmp(slave_info->sensor_name, "hi1333") ) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg");
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1200000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+					cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+	} else if (!(strcmp(slave_info->sensor_name, "hi1336") ) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg, sensor %s", slave_info->sensor_name);
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1100000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+					cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+	}
+#endif /* ODM_WT_EDIT */
+#ifdef ODM_WT_EDIT
+	cam_vreg = s_ctrl->sensordata->power_info.cam_vreg;
+	if (!(strcmp(slave_info->sensor_name, "s5k3p9sp") ) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg");
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1050000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+					cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+	} else if (!(strcmp(slave_info->sensor_name, "ov16885") ) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg");
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1200000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+					cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+	} else if ((!(strcmp(slave_info->sensor_name, "s5k4h7yx")) || (!(strcmp(slave_info->sensor_name, "gc5025")))) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg");
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1200000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+				cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+	}
+    else if (!(strcmp(slave_info->sensor_name, "gc8034") ) && cam_vreg != NULL) {
+        pr_err("dump cam_vreg");
+        for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+            pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+                cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+                cam_vreg[i].min_voltage);
+            if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+                cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1200000;
+                pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+                cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+            }
+        }
+    }
+    else if (!(strcmp(slave_info->sensor_name, "s5k3p9sp_xinli") ) && cam_vreg != NULL) {
+        pr_err("dump cam_vreg");
+        for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+            pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+                cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+                cam_vreg[i].min_voltage);
+            if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+                cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1050000;
+                pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+                    cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+            }
+        }
+    }
+    else if (!(strcmp(slave_info->sensor_name, "gc8034_xinli") ) && cam_vreg != NULL) {
+        pr_err("dump cam_vreg");
+        for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+            pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+                cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+                cam_vreg[i].min_voltage);
+            if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+                cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1200000;
+                pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+                    cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+            }
+        }
+	} else if (!(strcmp(slave_info->sensor_name, "hi1336") ) && cam_vreg != NULL) {
+		pr_err("dump cam_vreg, sensor %s", slave_info->sensor_name);
+		for (i =0; i< s_ctrl->sensordata->power_info.num_vreg; i++) {
+			pr_err("reg_name:%s, max_vol:%d, min_vol:%d",
+				cam_vreg[i].reg_name, cam_vreg[i].max_voltage,
+				cam_vreg[i].min_voltage);
+			if (!(strcmp(cam_vreg[i].reg_name, "cam_vdig"))) {
+				cam_vreg[i].max_voltage = cam_vreg[i].min_voltage = 1100000;
+				pr_err("set cam_vdig: max_vol:%d, min_vol:%d",
+					cam_vreg[i].max_voltage, cam_vreg[i].min_voltage);
+			}
+		}
+    }
+#endif /* ODM_WT_EDIT */
+
 	/* Parse and fill vreg params for powerup settings */
 	rc = msm_camera_fill_vreg_params(
 		s_ctrl->sensordata->power_info.cam_vreg,
@@ -1146,6 +1423,14 @@ CSID_TG:
 	 * node is created and used by HAL
 	 */
 
+	rc = msm_sensor_fill_slave_info_init_params(
+		slave_info,
+		s_ctrl->sensordata->sensor_info);
+	if (rc < 0) {
+		pr_err("%s Fill slave info failed", slave_info->sensor_name);
+		goto camera_power_down;
+	}
+
 	if (s_ctrl->sensor_device_type == MSM_CAMERA_PLATFORM_DEVICE)
 		rc = msm_sensor_driver_create_v4l_subdev(s_ctrl);
 	else
@@ -1158,13 +1443,6 @@ CSID_TG:
 	/* Power down */
 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
 
-	rc = msm_sensor_fill_slave_info_init_params(
-		slave_info,
-		s_ctrl->sensordata->sensor_info);
-	if (rc < 0) {
-		pr_err("%s Fill slave info failed", slave_info->sensor_name);
-		goto free_camera_info;
-	}
 	rc = msm_sensor_validate_slave_info(s_ctrl->sensordata->sensor_info);
 	if (rc < 0) {
 		pr_err("%s Validate slave info failed",
@@ -1185,6 +1463,37 @@ CSID_TG:
 
 	msm_sensor_fill_sensor_info(s_ctrl, probed_info, entity_name);
 
+#ifdef ODM_WT_EDIT
+	if (probed_info->position == CAM_FRONT_CAMERA){
+		pr_err("probe sensor: position=%d, sensor_name=%s, module_info=%s",
+			probed_info->position, probed_info->sensor_name,
+			g_module_info[g_front_module_id]);
+		hardwareinfo_set_prop(HARDWARE_FRONT_CAM, probed_info->sensor_name);
+		hardwareinfo_set_prop(HARDWARE_FRONT_CAM_MOUDULE_ID,
+			g_module_info[g_front_module_id]);
+		devinfo_info_set("f_camera", probed_info->sensor_name, (char*)g_module_info[g_front_module_id]);
+	} else if (probed_info->position == CAM_BACK_CAMERA){
+		pr_err("probe sensor: position=%d, sensor_name=%s, module_info=%s",
+			probed_info->position, probed_info->sensor_name,
+			g_module_info[g_main_module_id]);
+		hardwareinfo_set_prop(HARDWARE_BACK_CAM, probed_info->sensor_name);
+		hardwareinfo_set_prop(HARDWARE_BACK_CAM_MOUDULE_ID,
+			g_module_info[g_main_module_id]);
+		devinfo_info_set("r_camera", probed_info->sensor_name, (char*)g_module_info[g_main_module_id]);
+	} else {
+		if (!strcmp(probed_info->sensor_name, "sp2509v"))
+			g_aux_module_id = 15;
+		else if (!strcmp(probed_info->sensor_name, "gc2375h"))
+			g_aux_module_id = 14;
+		pr_err("probe sensor: position=%d, sensor_name=%s, module_info=%s",
+			probed_info->position, probed_info->sensor_name,
+			g_module_info[g_aux_module_id]);
+		hardwareinfo_set_prop(HARDWARE_BACK_SUB_CAM, probed_info->sensor_name);
+		hardwareinfo_set_prop(HARDWARE_BACK_SUB_CAM_MOUDULE_ID,
+			g_module_info[g_aux_module_id]);
+		devinfo_info_set("r2_camera", probed_info->sensor_name, (char*)g_module_info[g_aux_module_id]);
+	}
+#endif /*ODM_WT_EDIT*/
 	/*
 	 * Set probe succeeded flag to 1 so that no other camera shall
 	 * probed on this slot

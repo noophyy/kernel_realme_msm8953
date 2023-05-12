@@ -26,6 +26,270 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
 
+#ifdef ODM_WT_EDIT
+int g_main_module_id = 0;
+int g_front_module_id = 0;
+int g_aux_module_id = 0;
+
+#define S5K4H7YX_BYTES_FOR_PAGE 64
+#define S5K4H7YX_START_ADDR_OF_PAGE 0x0A04
+#define S5K4H7YX_NUM_OF_PAGE 58
+#define S5K4H7YX_FIRST_PAGE 21
+
+#define HI846_START_ADDR_OF_PAGE 0x0201
+#define HI846_START_ADDR_OF_PAGE_GROUP2 0X020A
+#define HI846_START_ADDR_OF_PAGE_GROUP3 0X0213
+#define HI846_END_ADDR_OF_PAGE 0x16F7
+struct msm_camera_i2c_reg_array hi846_settings[] ={
+{0x0A00, 0x0000, 0},
+{0x2000, 0x0000, 0},
+{0x2002, 0x00FF, 0},
+{0x2004, 0x0000, 0},
+{0x2008, 0x3FFF, 0},
+{0x23FE, 0xC056, 0},
+{0x0A00, 0x0000, 0},
+{0x0E04, 0x0012, 0},
+{0x0F08, 0x2F04, 0},
+{0x0F30, 0x001F, 0},
+{0x0F36, 0x001F, 0},
+{0x0F04, 0x3A00, 0},
+{0x0F32, 0x025A, 0},
+{0x0F38, 0x025A, 0},
+{0x0F2A, 0x4124, 0},
+{0x006A, 0x0100, 0},
+{0x004C, 0x0100, 0},
+{0, 0, 0},
+};
+
+typedef struct check_sensor_module_id_t{
+    char sensor_name[64];
+    uint32_t slave_addr;
+    uint32_t flag_addr;
+    uint16_t module_id;
+}check_sensor_module_id;
+
+check_sensor_module_id sensor_module_id_list[] = {
+    {"sunny_s5k3l6", 0xA0, 0x0, 0x1},
+    {"qtech_hi1333", 0xA0, 0x0, 0xB},
+    {"s5k3p9sp_fm24c64d", 0xA2, 0x0, 0x1},
+    {"ov16885_bl24sa64cs", 0xA2, 0x0, 0x7},
+    {"s5k3l6_ofilm", 0xA0, 0x0, 0x7},
+    {"holitech_gc5025", 0xA4, 0x0, 0xF},
+    {"txd_hi1336", 0xA0, 0x0, 0x19},
+    {"Unkonw", 0, 0},
+};
+
+extern void devinfo_info_set(char *name, char *version, char *manufacture);
+
+bool check_module_id(struct msm_eeprom_ctrl_t *e_ctrl, const char * name){
+    uint16_t i = 0, complete = 0;
+    struct msm_eeprom_board_info *eb_info;
+    eb_info = e_ctrl->eboard_info;
+
+    if(!strcmp(name, "sunny_s5k3l6") || !strcmp(name, "qtech_hi1333") || !strcmp(name, "s5k3l6_ofilm") || !strcmp(name, "txd_hi1336")){
+        if(0 != g_main_module_id){
+            pr_info("main camera have been probed, module id is 0x%x", g_main_module_id);
+            return false;
+        }
+    } else if(!strcmp(name, "s5k3p9sp_fm24c64d") || !strcmp(name, "ov16885_bl24sa64cs") || !strcmp(name, "holitech_gc5025")){
+        if(0 != g_front_module_id){
+            pr_info("sub camera have been probed, module id is 0x%x", g_front_module_id);
+            return false;
+        }
+    }
+
+    for(i = 0; 0 != sensor_module_id_list[i].module_id; i++){
+        if(!strcmp(name, sensor_module_id_list[i].sensor_name)){
+            eb_info->i2c_slaveaddr = sensor_module_id_list[i].slave_addr;
+            e_ctrl->i2c_client.cci_client->sid = eb_info->i2c_slaveaddr >> 1;
+            e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+
+            e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), sensor_module_id_list[i].flag_addr, &complete, MSM_CAMERA_I2C_BYTE_DATA);
+            if(0x55 != complete){
+                pr_err("OTP data empty or invalid : flag:0x%x", complete);
+                return false;
+            }
+            e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), sensor_module_id_list[i].flag_addr+1, &complete, MSM_CAMERA_I2C_BYTE_DATA);
+            if(complete != sensor_module_id_list[i].module_id ){
+				if (!strcmp(name, "holitech_gc5025") && (complete == 0x17)) {
+					pr_info("%s sensor is shengtai vendor, module id is 0x17", name);
+					return true;
+				}
+                pr_info("%s:%d read id:0x%x, sensor is not:%s", __func__, __LINE__, complete, name);
+                return false;
+            } else {
+                pr_info("%s:%d check module id success. sensor:%s, read id:0x%x", __func__, __LINE__, name, complete);
+                return true;
+            }
+        }
+    }
+    if(0 == sensor_module_id_list[i].module_id){
+        pr_err("%s:%d failed: Unknow sensor:%s", __func__, __LINE__, name);
+        return false;
+    }
+    return true;
+}
+
+static int qtech_gc8034_insensor_read_otp_info(struct msm_eeprom_ctrl_t *e_ctrl, struct msm_eeprom_memory_block_t *block)
+{
+    uint16_t rc = 0, complete = 0; //, total_num = 0, error_num = 0;
+    uint32_t addr = 0, max_addr = 0, page = 0;
+    uint8_t * memptr = block->mapdata;
+    if(NULL == memptr){
+        pr_info("%s:%d memptr NULL!", __func__, __LINE__);
+        return -1;
+    }
+
+    e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
+
+    rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfe, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfe, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfe, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf2, 0x01, 1);    //OTP clk enable
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf4, 0x88, 1);    //OTP enable
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf5, 0x19, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf6, 0x44, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf7, 0x97, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf8, 0x63, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf9, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfa, 0x45, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xfc, 0xee, 1);
+    msleep(20);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd4, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd5, 0x00, 1);
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x20, 1);
+    max_addr = 0x400;
+    for(page = 0; page < 10; page++){
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd4, ((page&0x0f)<<2), 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xd5, addr&0xff, 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x20, 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf4, 0x8a, 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x80, 1);
+        for(addr = 0x0 ; addr < max_addr; addr += 8){
+            rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xd7, &complete, 1);
+            *memptr = complete;
+            memptr++;
+        }
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf3, 0x00, 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0xf4, 0x88, 1);
+    }
+    return rc;
+}
+
+#if 0
+static int qtech_hi846_insensor_read_otp_info(struct msm_eeprom_ctrl_t *e_ctrl, struct msm_eeprom_memory_block_t *block)
+{
+	uint16_t i, rc = 0, complete = 0;
+	uint8_t * memptr = block->mapdata;
+	uint8_t check_valid = 0;
+	if(NULL == memptr){
+		pr_err("%s:%d memptr NULL!", __func__, __LINE__);
+	return -1;
+	}
+	e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+	for(i = 0; 0 != hi846_settings[i].reg_addr; i++){
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), hi846_settings[i].reg_addr, hi846_settings[i].reg_data, MSM_CAMERA_I2C_WORD_DATA);
+		if(rc < 0){
+			pr_err("hi846 write reg faild");
+			return -1;
+		}
+	}
+
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0a02, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0a00, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+	msleep(10);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0f02, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x071a, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x071b, 0x09, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0d04, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0d00, 0x07, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x003e, 0x10, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x070f, 0x05, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0a00, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+
+	for(i = HI846_START_ADDR_OF_PAGE; i < HI846_END_ADDR_OF_PAGE; i++)
+	{
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x070a, ((i>>8)&0xff), MSM_CAMERA_I2C_BYTE_DATA);
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x070b, (i&0xff), MSM_CAMERA_I2C_BYTE_DATA);
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0702, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+		rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x0708, &complete, MSM_CAMERA_I2C_BYTE_DATA);
+		pr_info("%s:%d i:0x%x complete:0x%x", __func__, __LINE__, i, complete);
+        if(i == HI846_START_ADDR_OF_PAGE){
+            if(complete != 0x55){
+                i = HI846_START_ADDR_OF_PAGE_GROUP2 -1;
+                continue;
+            }else check_valid = 1;
+        }
+        if((i == HI846_START_ADDR_OF_PAGE_GROUP2)&&(!check_valid)){
+            if(complete != 0x55){
+                i = HI846_START_ADDR_OF_PAGE_GROUP3 -1;
+                continue;
+            }else check_valid = 1;
+        }
+        if((i == HI846_START_ADDR_OF_PAGE_GROUP3)&&(!check_valid)){
+            if(complete != 0x55){
+                pr_err("hi846 check valid failed");
+                return -1;
+			}
+        }
+		if(rc < 0)
+		{
+			pr_err("hi846 read reg faild");
+			return -1;
+		}
+		*memptr = complete;
+		memptr++;
+	}
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0a00, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x003e, 0x00, MSM_CAMERA_I2C_BYTE_DATA);
+	e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0a00, 0x01, MSM_CAMERA_I2C_BYTE_DATA);
+	return 0;
+}
+#endif
+
+static int sunny_s5k4h7yx_insensor_read_otp_info(struct msm_eeprom_ctrl_t *e_ctrl, struct msm_eeprom_memory_block_t *block)
+{
+    uint16_t i, j, rc = 0, complete = 0;
+    uint8_t * memptr = block->mapdata;
+    if(NULL == memptr){
+        pr_info("%s:%d memptr NULL!", __func__, __LINE__);
+        return -1;
+    }
+
+    e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0136, 0x18, 1); // 24Mhz
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0137, 0x00, 1);
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0305, 0x06, 1); // Pre_pll_div
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0306, 0x00, 1); // PLL multiplier
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0307, 0x8C, 1);
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x030D, 0x06, 1); // Second_pre_pll_div
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x030E, 0x00, 1); // Second_pll_multiplier
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x030F, 0xAF, 1); // Second_pll_multiplier
+    e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0301, 0x04, 1); // Vt_pix_clk_div
+    rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0100, 0x01, 1);
+    msleep(50);
+
+    for(i = 0; i < S5K4H7YX_NUM_OF_PAGE; i++){
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0A02, S5K4H7YX_FIRST_PAGE+i, 1);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0A00, 0x01, 1);
+        for(j = 0; j<10 && 0==(complete&0x01); j++){
+            msleep(1);
+            rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x0A01, &complete, 1);
+            pr_info("%s:%d complete=%d rc=%d", __func__, __LINE__, complete, rc);
+        }
+        if(0 == (complete&0x01))
+            return -1;
+
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_read_seq(&(e_ctrl->i2c_client), S5K4H7YX_START_ADDR_OF_PAGE, memptr, S5K4H7YX_BYTES_FOR_PAGE);
+        rc += e_ctrl->i2c_client.i2c_func_tbl->i2c_write(&(e_ctrl->i2c_client), 0x0A00, 0x00, 1);
+        memptr += S5K4H7YX_BYTES_FOR_PAGE;
+    }
+
+    return 0;
+}
+#endif /*ODM_WT_EDIT*/
+
 /*
  * msm_get_read_mem_size - Get the total size for allocation
  * @eeprom_map_array:	mem map
@@ -151,6 +415,9 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 	struct msm_eeprom_memory_map_t *emap = block->map;
 	struct msm_eeprom_board_info *eb_info;
 	uint8_t *memptr = block->mapdata;
+#ifdef ODM_WT_EDIT
+	uint16_t id_for_sensor;
+#endif
 
 	if (!e_ctrl) {
 		pr_err("%s e_ctrl is NULL", __func__);
@@ -159,6 +426,101 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 
 	eb_info = e_ctrl->eboard_info;
 
+#ifdef ODM_WT_EDIT
+	if (!strcmp(eb_info->eeprom_name, "sunny_s5k4h7yx")) {
+		pr_info("g_front_module_id %d", g_front_module_id);
+		if (g_front_module_id != 0) return -1;
+		if (emap[0].saddr.addr) {
+			eb_info->i2c_slaveaddr = emap[0].saddr.addr;
+			e_ctrl->i2c_client.cci_client->sid =
+					eb_info->i2c_slaveaddr >> 1;
+			pr_info("qcom,slave-addr = 0x%X\n",
+				eb_info->i2c_slaveaddr);
+		}
+		e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x0000, &id_for_sensor, MSM_CAMERA_I2C_WORD_DATA);
+		pr_info("%s sunny_s5k4h7yx id_for_sensor 0x%x\n\n", __func__,id_for_sensor);
+		if(id_for_sensor != 0x487B){
+			return -1;
+		}
+		rc = sunny_s5k4h7yx_insensor_read_otp_info(e_ctrl, block);
+		if (rc < 0) {
+			pr_err("%s sunny_s5k4h7yx insensor_read_otp_info failed!\n", __func__);
+			return rc;
+		}
+	} else if(!strcmp(eb_info->eeprom_name, "qtech_hi846")){
+		pr_info("%s:%d qtech_hi846 do noting", __func__, __LINE__);
+#if 0
+		if(g_front_module_id != 0)return -1;
+	//	int module_id_addr = -1;
+		if (emap[0].saddr.addr) {
+			eb_info->i2c_slaveaddr = emap[0].saddr.addr;
+			e_ctrl->i2c_client.cci_client->sid =
+					eb_info->i2c_slaveaddr >> 1;
+			pr_info("qcom,slave-addr = 0x%X\n",
+				eb_info->i2c_slaveaddr);
+		}
+
+		e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_WORD_ADDR;
+		e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0x0F16, &id_for_sensor, MSM_CAMERA_I2C_WORD_DATA);
+		pr_info("%s qtech_hi846 id_for_sensor 0x%x\n\n", __func__,id_for_sensor);
+		if(id_for_sensor != 0x4608){
+		return -1;
+		}
+
+		rc = qtech_hi846_insensor_read_otp_info(e_ctrl, block);
+		if (rc < 0) {
+			pr_err("%s qtech_hi846_insensor_read_otp_info failed!\n", __func__);
+			return rc;
+		}
+#endif
+    } else if(!strcmp(eb_info->eeprom_name, "qtech_gc8034")){
+        pr_info("qtech_gc8034 g_front_module_id %d", g_front_module_id);
+        if(g_front_module_id != 0)return -1;
+        if (emap[0].saddr.addr) {
+            eb_info->i2c_slaveaddr = emap[0].saddr.addr;
+            e_ctrl->i2c_client.cci_client->sid =
+                eb_info->i2c_slaveaddr >> 1;
+            pr_info("qcom,slave-addr = 0x%X\n",
+                eb_info->i2c_slaveaddr);
+        }
+        e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
+        e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xf0, &id_for_sensor, MSM_CAMERA_I2C_WORD_DATA);
+        pr_info("%s qtech_gc8034 id_for_sensor 0x%x\n\n", __func__,id_for_sensor);
+        if(id_for_sensor != 0x8044){
+            return -1;
+        }
+        rc = qtech_gc8034_insensor_read_otp_info(e_ctrl, block);
+        if (rc < 0) {
+            pr_err("%s qtech_gc8034_insensor_read_otp_info failed!\n", __func__);
+            return rc;
+        }
+    } else if(!strcmp(eb_info->eeprom_name, "qtech_gc8034")){
+        pr_info("qtech_gc8034 g_front_module_id %d", g_front_module_id);
+        if(g_front_module_id != 0)return -1;
+        if (emap[0].saddr.addr) {
+            eb_info->i2c_slaveaddr = emap[0].saddr.addr;
+            e_ctrl->i2c_client.cci_client->sid =
+                eb_info->i2c_slaveaddr >> 1;
+            pr_info("qcom,slave-addr = 0x%X\n",
+                eb_info->i2c_slaveaddr);
+        }
+        e_ctrl->i2c_client.addr_type = MSM_CAMERA_I2C_BYTE_ADDR;
+        e_ctrl->i2c_client.i2c_func_tbl->i2c_read(&(e_ctrl->i2c_client), 0xf0, &id_for_sensor, MSM_CAMERA_I2C_WORD_DATA);
+        pr_info("%s qtech_gc8034 id_for_sensor 0x%x\n\n", __func__,id_for_sensor);
+        if(id_for_sensor != 0x8044){
+            return -1;
+        }
+        rc = qtech_gc8034_insensor_read_otp_info(e_ctrl, block);
+        if (rc < 0) {
+            pr_err("%s qtech_gc8034_insensor_read_otp_info failed!\n", __func__);
+            return rc;
+        }
+    } else {
+    if(!check_module_id(e_ctrl, eb_info->eeprom_name))
+		return -1;
+
+#endif /*ODM_WT_EDIT*/
 	for (j = 0; j < block->num_map; j++) {
 		if (emap[j].saddr.addr) {
 			eb_info->i2c_slaveaddr = emap[j].saddr.addr;
@@ -224,6 +586,9 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			}
 		}
 	}
+#ifdef ODM_WT_EDIT
+}
+#endif /*ODM_WT_EDIT*/
 	return rc;
 }
 /*
@@ -657,12 +1022,17 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		rc = msm_eeprom_get_cmm_data(e_ctrl, cdata);
 		break;
 	case CFG_EEPROM_INIT:
+#ifdef ODM_WT_EDIT
+		CDBG("%s:%d userspace_probe=%d, Eeprom will probed at kernel boot",
+			__func__, __LINE__, e_ctrl->userspace_probe);
+#else /* ODM_WT_EDIT */
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
 			rc = -EINVAL;
 			break;
 		}
+#endif/* ODM_WT_EDIT */
 		if (e_ctrl->cal_data.num_data == 0) {
 			rc = eeprom_init_config(e_ctrl, argp);
 			if (rc < 0) {
@@ -1626,12 +1996,17 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		rc = eeprom_config_read_cal_data32(e_ctrl, argp);
 		break;
 	case CFG_EEPROM_INIT:
+#ifdef ODM_WT_EDIT
+		CDBG("%s:%d userspace_probe=%d, Eeprom will probed at kernel boot",
+			__func__, __LINE__, e_ctrl->userspace_probe);
+#else /* ODM_WT_EDIT */
 		if (e_ctrl->userspace_probe == 0) {
 			pr_err("%s:%d Eeprom already probed at kernel boot",
 				__func__, __LINE__);
 			rc = -EINVAL;
 			break;
 		}
+#endif /* ODM_WT_EDIT */
 		if (e_ctrl->cal_data.num_data == 0) {
 			rc = eeprom_init_config32(e_ctrl, argp);
 			if (rc < 0)
@@ -1698,6 +2073,10 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	struct msm_eeprom_board_info *eb_info = NULL;
 	struct device_node *of_node = pdev->dev.of_node;
 	struct msm_camera_power_ctrl_t *power_info = NULL;
+
+#ifdef ODM_WT_EDIT
+	int module_id = 0;
+#endif /*ODM_WT_EDIT*/
 
 	CDBG("%s E\n", __func__);
 
@@ -1831,6 +2210,176 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		for (j = 0; j < e_ctrl->cal_data.num_data; j++)
 			CDBG("memory_data[%d] = 0x%X\n", j,
 				e_ctrl->cal_data.mapdata[j]);
+#ifdef ODM_WT_EDIT
+		if (!strcmp(eb_info->eeprom_name, "sunny_s5k3l6")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x1) {
+				g_main_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		} else if(!strcmp(eb_info->eeprom_name, "s5k3l6_ofilm")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x7) {
+				g_main_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		} else if (!strcmp(eb_info->eeprom_name, "qtech_hi1333")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0xB) {
+				g_main_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		} else if (!strcmp(eb_info->eeprom_name, "holitech_gc5025")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0xF) {
+				g_front_module_id = module_id;
+				if(e_ctrl->cal_data.mapdata[4] == 0x1) {
+					g_front_module_id = 0x10;
+					devinfo_info_set("f_camera", "gc5025", "Holitech_BG");
+				}
+				pr_info("gc5025 module_id0=%d, module_id1=%d, vcmid=%d", module_id, g_front_module_id,
+					e_ctrl->cal_data.mapdata[4]);
+			} else if (module_id == 0x17) {
+				g_front_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		} else if (!strcmp(eb_info->eeprom_name, "sunny_s5k4h7yx")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[64] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[65] & 0x1f;
+			} else if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x1) {
+				g_front_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		}else if (!strcmp(eb_info->eeprom_name, "s5k3p9sp_fm24c64d")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x01) {
+				g_front_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		} else if (!strcmp(eb_info->eeprom_name, "ov16885_bl24sa64cs")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+            if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x07) {
+				g_front_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		}else if (!strcmp(eb_info->eeprom_name, "qtech_hi846")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+            if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x0B) {
+				g_front_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+        }else if (!strcmp(eb_info->eeprom_name, "qtech_gc8034")) {
+            CDBG("match id for %s", eb_info->eeprom_name);
+            if (e_ctrl->cal_data.mapdata[413] == 0x55) {
+                module_id = e_ctrl->cal_data.mapdata[414] & 0x1f;
+            } else if (e_ctrl->cal_data.mapdata[432] == 0x55) {
+                module_id = e_ctrl->cal_data.mapdata[433] & 0x1f;
+            } else {
+                module_id = 0;
+            }
+            if (module_id == 0x0B) {
+                g_front_module_id = module_id;
+            } else {
+                pr_err("match module id failed: eeprom_name %s, module_id %d",
+                eb_info->eeprom_name, module_id);
+                goto power_down;
+            }
+		} else if(!strcmp(eb_info->eeprom_name, "s5k3l6_ofilm")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x7) {
+				g_main_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+        } else if (!strcmp(eb_info->eeprom_name, "txd_hi1336")) {
+			CDBG("match id for %s", eb_info->eeprom_name);
+			if (e_ctrl->cal_data.mapdata[0] == 0x55) {
+				module_id = e_ctrl->cal_data.mapdata[1] & 0x1f;
+			} else {
+				module_id = 0;
+			}
+			if (module_id == 0x19) {
+				g_main_module_id = module_id;
+			} else {
+				pr_err("match module id failed: eeprom_name %s, module_id %d",
+					eb_info->eeprom_name, module_id);
+				goto power_down;
+			}
+		}
+
+#endif /*ODM_WT_EDIT*/
 
 		e_ctrl->is_supported |= msm_eeprom_match_crc(&e_ctrl->cal_data);
 
@@ -1963,11 +2512,11 @@ static int __init msm_eeprom_init_module(void)
 {
 	int rc = 0;
 
-	CDBG("%s E\n", __func__);
+	pr_info("%s E\n", __func__);
 	rc = platform_driver_register(&msm_eeprom_platform_driver);
 	CDBG("%s:%d platform rc %d\n", __func__, __LINE__, rc);
 	rc = spi_register_driver(&msm_eeprom_spi_driver);
-	CDBG("%s:%d spi rc %d\n", __func__, __LINE__, rc);
+	pr_info("%s:%d spi rc %d\n", __func__, __LINE__, rc);
 	return i2c_add_driver(&msm_eeprom_i2c_driver);
 }
 

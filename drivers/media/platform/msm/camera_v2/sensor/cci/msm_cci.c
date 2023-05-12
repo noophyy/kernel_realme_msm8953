@@ -32,7 +32,13 @@
 #define CYCLES_PER_MICRO_SEC_DEFAULT 4915
 #define CCI_MAX_DELAY 1000000
 
+/* Jianying.zhang@ODM_RH.Camera.Portting */
+#ifdef VENDOR_EDIT
+/*oppo hufeng modify to add cci timeout time*/
+#define CCI_TIMEOUT msecs_to_jiffies(500)
+#else
 #define CCI_TIMEOUT msecs_to_jiffies(100)
+#endif
 
 /* TODO move this somewhere else */
 #define MSM_CCI_DRV_NAME "msm_cci"
@@ -1663,6 +1669,8 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 	return rc;
 }
 
+/* Jianying.zhang@ODM_RH.Camera.Portting */
+#ifndef VENDOR_EDIT
 static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *cci_ctrl)
 {
@@ -1700,6 +1708,63 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	cci_ctrl->status = rc;
 	return rc;
 }
+#else
+static int32_t msm_cci_config(struct v4l2_subdev *sd,
+	struct msm_camera_cci_ctrl *cci_ctrl)
+{
+	int32_t rc = 0, retry = 3;
+	struct cci_device *cci_dev;
+	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
+		cci_ctrl->cmd);
+	cci_dev = v4l2_get_subdevdata(sd);
+	mutex_lock(&cci_dev->mutex);
+
+	while (retry--) {
+		switch (cci_ctrl->cmd) {
+		case MSM_CCI_INIT:
+			rc = msm_cci_init(sd, cci_ctrl);
+			break;
+		case MSM_CCI_RELEASE:
+			rc = msm_cci_release(sd);
+			break;
+		case MSM_CCI_I2C_READ:
+			if (cci_dev->cci_state == CCI_STATE_DISABLED) {
+				pr_err("%s %d: CCI_STATE_DISABLED\n", __func__, __LINE__);
+				break;
+			}
+			rc = msm_cci_i2c_read_bytes(sd, cci_ctrl);
+			break;
+		case MSM_CCI_I2C_WRITE:
+		case MSM_CCI_I2C_WRITE_SEQ:
+		case MSM_CCI_I2C_WRITE_SYNC:
+		case MSM_CCI_I2C_WRITE_ASYNC:
+		case MSM_CCI_I2C_WRITE_SYNC_BLOCK:
+			if (cci_dev->cci_state == CCI_STATE_DISABLED) {
+				pr_err("%s %d: CCI_STATE_DISABLED\n", __func__, __LINE__);
+				break;
+			}
+			rc = msm_cci_write(sd, cci_ctrl);
+			break;
+		case MSM_CCI_GPIO_WRITE:
+			break;
+		case MSM_CCI_SET_SYNC_CID:
+			rc = msm_cci_i2c_set_sync_prms(sd, cci_ctrl);
+			break;
+
+		default:
+			rc = -ENOIOCTLCMD;
+		}
+		if (rc >= 0) {
+			break ;
+		}
+		pr_err("%s:retry=%d\n",__func__,retry);
+	}
+	CDBG("%s line %d rc %d\n", __func__, __LINE__, rc);
+	cci_ctrl->status = rc;
+	mutex_unlock(&cci_dev->mutex);
+	return rc;
+}
+#endif /*VENDOR_EDIT*/
 
 static irqreturn_t msm_cci_irq(int irq_num, void *data)
 {
@@ -2094,6 +2159,13 @@ static int msm_cci_probe(struct platform_device *pdev)
 		pr_err("%s: no enough memory\n", __func__);
 		return -ENOMEM;
 	}
+
+        /* Jianying.zhang@ODM_RH.Camera.Portting */
+        #ifdef VENDOR_EDIT
+        /* Add by Liubin for cci dev mutex at 20160730 */
+        mutex_init(&new_cci_dev->mutex);
+        #endif
+
 	v4l2_subdev_init(&new_cci_dev->msm_sd.sd, &msm_cci_subdev_ops);
 	snprintf(new_cci_dev->msm_sd.sd.name,
 			ARRAY_SIZE(new_cci_dev->msm_sd.sd.name), "msm_cci");
@@ -2191,6 +2263,13 @@ cci_invalid_vreg_data:
 cci_release_mem:
 	msm_camera_put_reg_base(pdev, new_cci_dev->base, "cci", true);
 cci_no_resource:
+
+        /* Jianying.zhang@ODM_RH.Camera.Portting */
+        #ifdef VENDOR_EDIT
+        /* Add by liubin for cci dev mutex at 20160730 */
+        mutex_destroy(&new_cci_dev->mutex);
+        #endif
+
 	kfree(new_cci_dev);
 	return rc;
 }
