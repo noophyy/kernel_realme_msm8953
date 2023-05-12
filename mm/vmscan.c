@@ -150,6 +150,14 @@ struct scan_control {
  * From 0 .. 100.  Higher means more swappy.
  */
 int vm_swappiness = 60;
+
+#ifdef VENDOR_EDIT
+/*
+ * Direct reclaim swappiness, exptct 0 - 60. Higher means more swappy and slower.
+ */
+int direct_vm_swappiness = 60;
+#endif
+
 /*
  * The total number of pages which are beyond the high watermark within all
  * zones.
@@ -716,8 +724,13 @@ static int __remove_mapping(struct address_space *mapping, struct page *page,
 		swp_entry_t swap = { .val = page_private(page) };
 		mem_cgroup_swapout(page, swap);
 		__delete_from_swap_cache(page);
-		spin_unlock_irqrestore(&mapping->tree_lock, flags);
-		swapcache_free(swap);
+#ifndef VENDOR_EDIT
+               spin_unlock_irqrestore(&mapping->tree_lock, flags);
+#endif
+               swapcache_free(swap);
+#ifdef VENDOR_EDIT
+               spin_unlock_irqrestore(&mapping->tree_lock, flags);
+#endif
 	} else {
 		void (*freepage)(struct page *);
 		void *shadow = NULL;
@@ -1807,7 +1820,23 @@ static bool inactive_reclaimable_pages(struct lruvec *lruvec,
 
 	return false;
 }
-
+#ifdef VENDOR_EDIT
+extern bool is_fg(int uid);
+static inline int get_current_adj(void)
+{
+#ifdef CONFIG_OPPO_FG_OPT
+	int cur_uid;
+#endif
+	if (current->signal->oom_score_adj < 0)
+		return 0;
+#ifdef CONFIG_OPPO_FG_OPT
+	cur_uid = current_uid().val;
+	if (is_fg(cur_uid))
+		return 0;
+#endif
+	return current->signal->oom_score_adj;
+}
+#endif /*VENDOR*/
 /*
  * shrink_inactive_list() is a helper for shrink_node().  It returns the number
  * of reclaimed pages
@@ -1953,10 +1982,14 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	 * is congested. Allow kswapd to continue until it starts encountering
 	 * unqueued dirty pages or cycling through the LRU too quickly.
 	 */
+#ifdef VENDOR_EDIT
+	if (!sc->hibernation_mode && !current_is_kswapd() &&
+	    current_may_throttle() && get_current_adj())
+#else
 	if (!sc->hibernation_mode && !current_is_kswapd() &&
 	    current_may_throttle())
+#endif
 		wait_iff_congested(pgdat, BLK_RW_ASYNC, HZ/10);
-
 	trace_mm_vmscan_lru_shrink_inactive(pgdat->node_id,
 			nr_scanned, nr_reclaimed,
 			sc->priority, file);
@@ -2152,7 +2185,6 @@ static bool inactive_list_is_low(struct lruvec *lruvec, bool file,
 	enum lru_list inactive_lru = file * LRU_FILE;
 	enum lru_list active_lru = file * LRU_FILE + LRU_ACTIVE;
 	unsigned long gb;
-
 	/*
 	 * If we don't have swap space, anonymous page deactivation
 	 * is pointless.
@@ -2162,13 +2194,16 @@ static bool inactive_list_is_low(struct lruvec *lruvec, bool file,
 
 	inactive = lruvec_lru_size(lruvec, inactive_lru, sc->reclaim_idx);
 	active = lruvec_lru_size(lruvec, active_lru, sc->reclaim_idx);
-
 	gb = (inactive + active) >> (30 - PAGE_SHIFT);
+#ifdef VENDOR_EDIT
+	if (gb && file)
+		inactive_ratio = min(2UL, int_sqrt(10 * gb));
+#else
 	if (gb)
 		inactive_ratio = int_sqrt(10 * gb);
+#endif /*VENDOR_EDIT*/
 	else
 		inactive_ratio = 1;
-
 	return inactive * inactive_ratio < active;
 }
 
@@ -2215,8 +2250,15 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 	unsigned long ap, fp;
 	enum lru_list lru;
 
+	if (!current_is_kswapd()) {
+		swappiness = direct_vm_swappiness;
+	}
 	/* If we have no swap space, do not bother scanning anon pages. */
+#ifndef VENDOR_EDIT
 	if (!sc->may_swap || mem_cgroup_get_nr_swap_pages(memcg) <= 0) {
+#else
+	if (!sc->may_swap || (mem_cgroup_get_nr_swap_pages(memcg) <= total_swap_pages>>6)) {
+#endif
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2389,6 +2431,12 @@ out:
 		nr[lru] = scan;
 	}
 }
+#ifdef VENDOR_EDIT
+#define for_each_evictable_lru_file(lru) for (lru = LRU_INACTIVE_FILE; lru <= LRU_ACTIVE_FILE; lru++)
+#define for_each_evictable_lru_anon(lru) for (lru = LRU_INACTIVE_ANON; lru <= LRU_ACTIVE_ANON; lru++)
+static unsigned  int swap_max_ratio = 1;
+module_param_named(swap_max_ratio, swap_max_ratio, uint, S_IRUGO | S_IWUSR);
+#endif /*VENDOR_EDIT*/
 
 /*
  * This is a basic per-node page freer.  Used by both kswapd and direct reclaim.
@@ -2430,7 +2478,26 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 					nr[LRU_INACTIVE_FILE]) {
 		unsigned long nr_anon, nr_file, percentage;
 		unsigned long nr_scanned;
+#ifdef VENDOR_EDIT
+		for_each_evictable_lru_file(lru) {
+			if (nr[lru]) {
+				nr_to_scan = min(nr[lru], SWAP_CLUSTER_MAX);
+				nr[lru] -= nr_to_scan;
 
+				nr_reclaimed += shrink_list(lru, nr_to_scan,
+								lruvec, sc);
+			}
+		}
+		for_each_evictable_lru_anon(lru) {
+			if (nr[lru]) {
+				nr_to_scan = min(nr[lru], SWAP_CLUSTER_MAX);
+				nr[lru] -= nr_to_scan;
+
+				nr_reclaimed += shrink_list(lru, nr_to_scan,
+								lruvec, sc);
+			}
+		}
+#else
 		for_each_evictable_lru(lru) {
 			if (nr[lru]) {
 				nr_to_scan = min(nr[lru], SWAP_CLUSTER_MAX);
@@ -2440,7 +2507,7 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 							    lruvec, sc);
 			}
 		}
-
+#endif /*VENDOR_EDIT*/
 		cond_resched();
 
 		if (nr_reclaimed < nr_to_reclaim || scan_adjusted)
@@ -3037,7 +3104,9 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_unmap = 1,
 		.may_swap = 1,
 	};
-
+#ifdef VENDOR_EDIT
+	sc.nr_to_reclaim = SWAP_CLUSTER_MAX  <<  swap_max_ratio;
+#endif /*VENDOR_EDIT*/
 	/*
 	 * Do not enter reclaim if fatal signal was delivered while throttled.
 	 * 1 is returned so that the page allocator does not OOM kill at this
@@ -3633,7 +3702,10 @@ void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
 	wake_up_interruptible(&pgdat->kswapd_wait);
 }
 
-#ifdef CONFIG_HIBERNATION
+//#ifndef VENDOR_EDIT
+//Remove for low memory shrink
+//#ifdef CONFIG_HIBERNATION
+//#endif /* VENDOR_EDIT */
 /*
  * Try to free `nr_to_reclaim' of memory, system-wide, and return the number of
  * freed pages.
@@ -3672,7 +3744,12 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 
 	return nr_reclaimed;
 }
-#endif /* CONFIG_HIBERNATION */
+//#ifndef VENDOR_EDIT
+//Modify for low memory shrink
+//#endif /* CONFIG_HIBERNATION */
+//#else /* VENDOR_EDIT */
+EXPORT_SYMBOL(shrink_all_memory);
+//#endif /* VENDOR_EDIT */
 
 /* It's optimal to keep kswapds on the same CPUs as their memory, but
    not required for correctness.  So if the last cpu in a node goes
