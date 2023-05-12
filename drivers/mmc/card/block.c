@@ -1553,6 +1553,9 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 	unsigned long timeout = jiffies + msecs_to_jiffies(timeout_ms);
 	int err = 0;
 	u32 status;
+#ifdef VENDOR_EDIT
+	char *envp[2] = {"sdcard_ro=1", NULL};
+#endif /* VENDOR_EDIT */
 
 	do {
 		err = get_card_status(card, &status, 5);
@@ -1581,6 +1584,13 @@ static int card_busy_detect(struct mmc_card *card, unsigned int timeout_ms,
 			pr_err("%s: Card stuck in programming state! %s %s\n",
 				mmc_hostname(card->host),
 				req->rq_disk->disk_name, __func__);
+
+#ifdef VENDOR_EDIT
+			kobject_uevent_env(
+					&(card->dev.kobj),
+					KOBJ_CHANGE, envp);
+			card->host->card_stuck_in_programing_status = true;
+#endif /* VENDOR_EDIT */
 			return -ETIMEDOUT;
 		}
 
@@ -4772,18 +4782,73 @@ static const struct mmc_fixup blk_fixups[] =
 	END_FIXUP
 };
 
+#ifdef ODM_WT_EDIT
+extern void devinfo_info_set(char *name, char *version, char *manufacture);
+#endif /* ODM_WT_EDIT */
+
 static int mmc_blk_probe(struct mmc_card *card)
 {
 	struct mmc_blk_data *md, *part_md;
 	char cap_str[10];
+#ifdef ODM_WT_EDIT
+	char *vendor_name = NULL;
+	char *emcp_name = NULL;
+	static char temp_version[10];
+#endif /* ODM_WT_EDIT */
+
 
 	/*
 	 * Check that the card supports the command class(es) we need.
 	 */
+#ifndef VENDOR_EDIT
 	if (!(card->csd.cmdclass & CCC_BLOCK_READ))
 		return -ENODEV;
 
+#endif
 	mmc_fixup_device(card, blk_fixups);
+
+#ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.BSP.Storage Porting
+	switch (card->cid.manfid) {
+		case 0x11:
+			vendor_name = "TOSHIBA";
+			break;
+		case 0x13:
+			vendor_name = "MICRON";
+			break;
+		case 0x15:
+			vendor_name = "SAMSUNG";
+			if (strncmp(card->cid.prod_name, "RH64MB", strlen("RH64MB")) == 0)
+				emcp_name = "SAMSUNG_RH64MB_3D";
+			else if (strncmp(card->cid.prod_name, "RH64AB", strlen("RH64AB")) == 0)
+				emcp_name = "SAMSUNG_RH64AB_3D";
+			else
+				emcp_name = NULL;
+			break;
+		case 0x45:
+			vendor_name = "SANDISK";
+			break;
+		case 0x90:
+			vendor_name = "HYNIX";
+			break;
+		case 0xFE:
+			vendor_name = "ELPIDA";
+			break;
+		default:
+			vendor_name = "Unknown";
+			break;
+	}
+
+	if (!strcmp(mmc_card_id(card), "mmc0:0001")) {
+		sprintf(temp_version,"0x%02x,0x%llx",card->cid.prv,*(unsigned long long*)card->ext_csd.fwrev);
+		if (emcp_name != NULL) {
+			devinfo_info_set("emmc", mmc_card_name(card), emcp_name);
+		} else {
+			devinfo_info_set("emmc", mmc_card_name(card), vendor_name);
+		}
+		devinfo_info_set("emmc_version", mmc_card_name(card), temp_version);
+	}
+#endif /* ODM_WT_EDIT */
 
 	md = mmc_blk_alloc(card);
 	if (IS_ERR(md))
@@ -4800,7 +4865,10 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 	dev_set_drvdata(&card->dev, md);
 
-	mmc_set_bus_resume_policy(card->host, 1);
+#ifdef VENDOR_EDIT
+	if (!(mmc_card_is_removable(card->host) && !(card->host->caps & MMC_CAP_NEEDS_POLL)))
+#endif /*VENDOR_EDIT*/
+		mmc_set_bus_resume_policy(card->host, 1);
 
 	if (mmc_add_disk(md))
 		goto out;
@@ -4845,7 +4913,10 @@ static void mmc_blk_remove(struct mmc_card *card)
 	pm_runtime_put_noidle(&card->dev);
 	mmc_blk_remove_req(md);
 	dev_set_drvdata(&card->dev, NULL);
-	mmc_set_bus_resume_policy(card->host, 0);
+#ifdef VENDOR_EDIT
+	if (!(mmc_card_is_removable(card->host) && !(card->host->caps & MMC_CAP_NEEDS_POLL)))
+#endif /*VENDOR_EDIT*/
+		mmc_set_bus_resume_policy(card->host, 0);
 }
 
 static int _mmc_blk_suspend(struct mmc_card *card, bool wait)

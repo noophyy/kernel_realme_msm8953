@@ -695,6 +695,9 @@ again:
 	}
 
 	dev_set_name(&host->class_dev, "mmc%d", host->index);
+#ifdef VENDOR_EDIT
+        host->card_stuck_in_programing_status = false;
+#endif /* VENDOR_EDIT */
 
 	host->parent = dev;
 	host->class_dev.parent = dev;
@@ -720,6 +723,10 @@ again:
 	setup_timer(&host->retune_timer, mmc_retune_timer, (unsigned long)host);
 
 	mutex_init(&host->rpmb_req_mutex);
+
+#ifdef VENDOR_EDIT
+	host->detect_change_retry = 5;
+#endif /* VENDOR_EDIT */
 
 	/*
 	 * By default, hosts do not support SGIO or large requests.
