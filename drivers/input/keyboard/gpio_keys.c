@@ -355,6 +355,72 @@ static struct attribute_group gpio_keys_attr_group = {
 	.attrs = gpio_keys_attrs,
 };
 
+#ifdef VENDOR_EDIT
+#define VOLKEYPASSWORD 18351
+static unsigned int vol_Key_password = 0;
+static unsigned long start_timer_last = 0;
+static int door_open = 0;
+static int request_dump = 0;
+extern void set_dload_mode(int on);
+extern void msm_trigger_wdog_bite(void);
+
+void remote_request_dump(void)
+{
+	if(door_open) {
+		request_dump = 1;
+	}
+}
+EXPORT_SYMBOL(remote_request_dump);
+
+void diss_update_key_code(unsigned int psw, unsigned int code, int state)
+{
+	unsigned long start_timer_current = jiffies;
+
+	if(psw != 86521) {
+		return;
+	}
+
+	if((code != KEY_VOLUMEUP) && (code != KEY_VOLUMEDOWN)) {
+		return;
+	}
+
+	if(code == KEY_VOLUMEUP) {
+		if(state)
+			vol_Key_password = (vol_Key_password << 1)|0x01;
+	}
+
+	if(code == KEY_VOLUMEDOWN) {
+		if(state)
+			vol_Key_password = (vol_Key_password << 1)&~0x01;
+	}
+	if (state) {
+		if(door_open) {
+			if(request_dump) {
+				pr_err("Tip : trig a watchdog bite manually, take it easy.\n");
+				msm_trigger_wdog_bite();
+			}
+			set_dload_mode(0);
+			door_open = 0;
+			vol_Key_password = 0;
+			pr_err("vol_Key_password door_close \n");
+		}
+		start_timer_current = jiffies;
+
+		if(start_timer_last != 0) {
+			if (time_after(start_timer_current,start_timer_last + msecs_to_jiffies(1000))) {
+				vol_Key_password = 0;
+			}
+			if((VOLKEYPASSWORD == vol_Key_password) && (door_open == 0)) {
+				pr_err("vol_Key_password door_open \n");
+				set_dload_mode(1);
+				door_open = 1;
+			}
+		}
+		start_timer_last = start_timer_current;
+	}
+}
+#endif /* VENDOR_EDIT */
+
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -376,6 +442,16 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 		input_event(input, type, button->code, state);
 	}
 	input_sync(input);
+
+	#ifdef VENDOR_EDIT
+	pr_err("keycode = %d,key_st = %d\n",button->code, state);
+	#endif
+
+	#ifdef VENDOR_EDIT
+	if(((button->code == KEY_VOLUMEUP) ||(button->code == KEY_VOLUMEDOWN)) && !!state) {
+		diss_update_key_code(86521, button->code, state);
+    }
+	#endif /* VENDOR_EDIT */
 }
 
 static void gpio_keys_gpio_work_func(struct work_struct *work)

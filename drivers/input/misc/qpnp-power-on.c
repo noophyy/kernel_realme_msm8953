@@ -34,6 +34,19 @@
 #include <linux/qpnp/qpnp-pbs.h>
 #include <linux/qpnp/qpnp-misc.h>
 #include <linux/power_supply.h>
+#ifdef ODM_WT_EDIT
+#include <linux/hardware_info.h>
+#endif
+
+#ifdef VENDOR_EDIT
+#include "oppo_proj_def.h"
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+#ifdef WT_COMPILE_FACTORY_VERSION
+#include <soc/oppo/oppo_project.h>
+#endif
+#endif /* VENDOR_EDIT */
 
 #define PMIC_VER_8941           0x01
 #define PMIC_VERSION_REG        0x0105
@@ -927,6 +940,10 @@ static int qpnp_pon_store_and_clear_warm_reset(struct qpnp_pon *pon)
 	return 0;
 }
 
+#ifdef VENDOR_EDIT
+extern void diss_update_key_code(unsigned int psw, unsigned int code, int state);
+#endif /* VENDOR_EDIT */
+
 static int
 qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 {
@@ -995,11 +1012,20 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 		input_report_key(pon->pon_input, cfg->key_code, 1);
 		input_sync(pon->pon_input);
 	}
-
+#ifdef VENDOR_EDIT
+//Fanhong.Kong@ProDrv.CHG,add 2016/7/26 for keycode
+	pr_err("keycode = %d,key_st = %d\n",cfg->key_code, key_status);
+#endif
 	input_report_key(pon->pon_input, cfg->key_code, key_status);
 	input_sync(pon->pon_input);
 
 	cfg->old_state = !!key_status;
+
+	#ifdef VENDOR_EDIT
+	if(((cfg->key_code == KEY_VOLUMEUP) ||(cfg->key_code == KEY_VOLUMEDOWN)) && !!key_status) {
+		diss_update_key_code(86521, cfg->key_code, key_status);
+    }
+	#endif /* VENDOR_EDIT */
 
 	return 0;
 }
@@ -2120,6 +2146,163 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 	return 0;
 }
 
+#ifdef ODM_WT_EDIT
+void oppoversion_info_set(char *name, char *version);
+extern char board_id[HARDWARE_MAX_ITEM_LONGTH];
+enum{
+	MSM_BOOT_MODE__NORMAL,
+	MSM_BOOT_MODE__FASTBOOT,
+	MSM_BOOT_MODE__RECOVERY,
+	MSM_BOOT_MODE__FACTORY,
+	MSM_BOOT_MODE__RF,
+	MSM_BOOT_MODE__WLAN,
+	MSM_BOOT_MODE__MOS,
+	MSM_BOOT_MODE__CHARGE,
+	MSM_BOOT_MODE__SILENCE,
+	MSM_BOOT_MODE__SAU,
+};
+void probe_board_and_set(void)
+{
+	char* boadrid_start, *boardvol_start, *modemid_start, *oppo_ftmmode_start, *operatorID_start;
+	char boardid_info[HARDWARE_MAX_ITEM_LONGTH];
+	char modemid_info[HARDWARE_MAX_ITEM_LONGTH];
+	char prjversion_info[HARDWARE_MAX_ITEM_LONGTH];
+	char ftmmode_info[HARDWARE_MAX_ITEM_LONGTH];
+	char operatorID_info[HARDWARE_MAX_ITEM_LONGTH];
+	int ftm_mode = 0;
+	int i = 0;
+
+	boadrid_start = strstr(saved_command_line,"board_id=");
+	boardvol_start = strstr(saved_command_line,"board_vol=");
+
+	memset(boardid_info, 0, HARDWARE_MAX_ITEM_LONGTH);
+	if(boadrid_start != NULL)
+	{
+		boardvol_start = strstr(boadrid_start,":board_vol=");
+		if(boardvol_start != NULL)
+		{
+			strncpy(boardid_info, boadrid_start+sizeof("board_id=")-1, boardvol_start-(boadrid_start+sizeof("board_id=")-1));//skip the header "board_id="
+		}
+		else
+		{
+			strncpy(boardid_info, boadrid_start+sizeof("board_id=")-1, 9);//skip the header "board_id="
+		}
+	}
+	else
+	{
+		sprintf(boardid_info, "boarid not define!");
+	}
+	//hardwareinfo_set_prop(HARDWARE_BOARD_ID, boardid_info);
+	strncpy(board_id, boardid_info, HARDWARE_MAX_ITEM_LONGTH);
+
+    //Add for information in oppoVersion/operatorName
+	operatorID_start = strstr(saved_command_line, "operatorID=");
+
+	if(operatorID_start != NULL)
+	{
+		operatorID_start += strlen("operatorID=");
+
+		strncpy(operatorID_info, operatorID_start, HARDWARE_MAX_ITEM_LONGTH);
+		i = 0;
+		while(i < HARDWARE_MAX_ITEM_LONGTH)
+		{
+			if(operatorID_info[i] >= '0' && operatorID_info[i] <= '9'){
+				i++;
+			}else{
+				break;
+			}
+		}
+
+		if(i < HARDWARE_MAX_ITEM_LONGTH){
+			operatorID_info[i] = '\0';
+		}
+	}
+	else
+	{
+		strncpy(operatorID_info, "0", HARDWARE_MAX_ITEM_LONGTH);
+	}
+
+    //Add for information in oppoVersion/modemType
+	modemid_start = strstr(saved_command_line,"modem_id=");
+
+	if(modemid_start != NULL)
+	{
+		modemid_start += strlen("modem_id=");
+
+		strncpy(modemid_info, modemid_start, HARDWARE_MAX_ITEM_LONGTH);
+		i = 0;
+		while(i < HARDWARE_MAX_ITEM_LONGTH)
+		{
+			if(modemid_info[i] >= '0' && modemid_info[i] <= '9'){
+				i++;
+			}else{
+				break;
+			}
+		}
+
+		if(i < HARDWARE_MAX_ITEM_LONGTH){
+			modemid_info[i] = '\0';
+		}
+	}
+	else
+	{
+		strncpy(modemid_info, "0", HARDWARE_MAX_ITEM_LONGTH);
+	}
+
+	#ifndef WT_COMPILE_FACTORY_VERSION
+    //modemid 1,2,3 to 18351, modemid 4 to 18052, modemid 5 to 18051
+	if(strcmp(modemid_info, "1") == 0 || strcmp(modemid_info, "2") == 0 || strcmp(modemid_info, "3") == 0){
+		if(OPPO_PROJECT_FOR_BUILD == 18355) {
+			strncpy(prjversion_info, "18355", HARDWARE_MAX_ITEM_LONGTH);
+		}else {
+			strncpy(prjversion_info, "18351", HARDWARE_MAX_ITEM_LONGTH);
+		}
+	}else if(strcmp(modemid_info, "4") == 0){
+	    strncpy(prjversion_info, "18051", HARDWARE_MAX_ITEM_LONGTH);
+	}else if(strcmp(modemid_info, "5") == 0){
+	    strncpy(prjversion_info, "18051", HARDWARE_MAX_ITEM_LONGTH);
+	}
+	#else
+	snprintf(prjversion_info, HARDWARE_MAX_ITEM_LONGTH, "%d", get_project_from_smem());
+	pr_err("%s : prj=%s\n", __func__, prjversion_info);
+	#endif
+	oppo_ftmmode_start = strstr(saved_command_line,"oppo_ftm_mode=");
+
+	if(oppo_ftmmode_start != NULL){
+
+		//skip the cdmline header of oppo_ftm_mode
+		oppo_ftmmode_start += strlen("oppo_ftm_mode=");
+
+		if(strncmp(oppo_ftmmode_start, "factory2", strlen("factory2")) == 0){
+			ftm_mode = MSM_BOOT_MODE__FACTORY;
+			pr_err("kernel ftm OK\r\n");
+		}else if(strncmp(oppo_ftmmode_start, "ftmwifi", strlen("ftmwifi")) == 0){
+			ftm_mode = MSM_BOOT_MODE__WLAN;
+		}else if(strncmp(oppo_ftmmode_start, "ftmmos", strlen("ftmmos")) == 0){
+			ftm_mode = MSM_BOOT_MODE__MOS;
+		}else if(strncmp(oppo_ftmmode_start, "ftmrf", strlen("ftmrf")) == 0){
+			ftm_mode = MSM_BOOT_MODE__RF;
+		}else if(strncmp(oppo_ftmmode_start, "ftmrecovery", strlen("ftmrecovery")) == 0){
+			ftm_mode = MSM_BOOT_MODE__RECOVERY;
+		}else if(strncmp(oppo_ftmmode_start, "ftmsilence", strlen("ftmsilence")) == 0){
+			ftm_mode = MSM_BOOT_MODE__SILENCE;
+		}else if(strncmp(oppo_ftmmode_start, "ftmsau", strlen("ftmsau")) == 0){
+			ftm_mode = MSM_BOOT_MODE__SAU;
+		}else{
+			ftm_mode = MSM_BOOT_MODE__NORMAL;
+		}
+	}else{
+		ftm_mode = MSM_BOOT_MODE__NORMAL;
+	}
+
+	sprintf(ftmmode_info, "%d", ftm_mode);
+
+	oppoversion_info_set("modemType", modemid_info);
+	oppoversion_info_set("operatorName", operatorID_info);
+	oppoversion_info_set("prjVersion", prjversion_info);
+	oppoversion_info_set("bootMode", ftmmode_info);
+}
+#endif/*ODM_WT_EDIT*/
 static int pon_twm_notifier_cb(struct notifier_block *nb,
 				unsigned long action, void *data)
 {
@@ -2149,6 +2332,11 @@ static int pon_register_twm_notifier(struct qpnp_pon *pon)
 	return rc;
 }
 
+#ifdef VENDOR_EDIT
+extern char pon_reason[];
+extern char poff_reason[];
+int preason_initialized;
+#endif /*VENDOR_EDIT*/
 static int qpnp_pon_probe(struct platform_device *pdev)
 {
 	struct qpnp_pon *pon;
@@ -2284,6 +2472,12 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 		dev_err(&pon->pdev->dev,
 			"Unable to read PON_RESASON1 reg rc: %d\n",
 			rc);
+#ifdef VENDOR_EDIT
+		if (!preason_initialized) {
+			snprintf(pon_reason, 128, "Unable to read PON_RESASON1 reg rc: %d\n", rc);
+			preason_initialized = 1;
+		}
+#endif /*VENDOR_EDIT*/
 		goto err_out;
 	}
 
@@ -2291,12 +2485,20 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 		boot_reason = ffs(pon_sts);
 
 	index = ffs(pon_sts) - 1;
+#ifdef VENDOR_EDIT
+	if (pon_sts & 0x80)
+		index = 7;
+#endif /*VENDOR_EDIT*/
 	cold_boot = !qpnp_pon_is_warm_reset();
 	if (index >= ARRAY_SIZE(qpnp_pon_reason) || index < 0) {
 		dev_info(&pon->pdev->dev,
 			"PMIC@SID%d Power-on reason: Unknown and '%s' boot\n",
 			to_spmi_device(pon->pdev->dev.parent)->usid,
 			 cold_boot ? "cold" : "warm");
+#ifdef VENDOR_EDIT
+		if (!preason_initialized)
+			snprintf(pon_reason, 128, "Unknown[0x%02X] and '%s' boot\n", pon_sts, cold_boot ? "cold" : "warm");
+#endif /*VENDOR_EDIT*/
 	} else {
 		pon->pon_trigger_reason = index;
 		dev_info(&pon->pdev->dev,
@@ -2304,6 +2506,11 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 			to_spmi_device(pon->pdev->dev.parent)->usid,
 			 qpnp_pon_reason[index],
 			cold_boot ? "cold" : "warm");
+#ifdef VENDOR_EDIT
+		if (!preason_initialized)
+			snprintf(pon_reason, 128, "[0x%02X]%s and '%s' boot\n", pon_sts,
+				qpnp_pon_reason[index],	cold_boot ? "cold" : "warm");
+#endif /*VENDOR_EDIT*/
 	}
 
 	/* POFF reason */
@@ -2318,6 +2525,12 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 		if (rc) {
 			dev_err(&pon->pdev->dev, "Unable to read POFF_REASON regs rc:%d\n",
 				rc);
+#ifdef VENDOR_EDIT
+		if (!preason_initialized) {
+			snprintf(poff_reason, 128, "Unable to read POFF_RESASON regs rc:%d\n", rc);
+			preason_initialized = 1;
+		}
+#endif /*VENDOR_EDIT*/
 			goto err_out;
 		}
 		poff_sts = buf[0] | (buf[1] << 8);
@@ -2327,12 +2540,24 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Unknown power-off reason\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid);
+#ifdef VENDOR_EDIT
+		if (!preason_initialized) {
+			snprintf(poff_reason, 128, "Unknown[0x%04X]\n", poff_sts);
+			preason_initialized = 1;
+		}
+#endif /*VENDOR_EDIT*/
 	} else {
 		pon->pon_power_off_reason = index;
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Power-off reason: %s\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid,
 				qpnp_poff_reason[index]);
+#ifdef VENDOR_EDIT
+		if (!preason_initialized) {
+			snprintf(poff_reason, 128, "[0x%04X]%s\n", poff_sts, qpnp_poff_reason[index]);
+			preason_initialized = 1;
+		}
+#endif /*VENDOR_EDIT*/
 	}
 
 	if (pon->pon_trigger_reason == PON_SMPL ||
@@ -2607,6 +2832,9 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 					"qcom,use-legacy-hard-reset-offset");
 
 	qpnp_pon_debugfs_init(pdev);
+	#ifdef ODM_WT_EDIT
+	probe_board_and_set();
+	#endif/*ODM_WT_EDIT*/
 	return 0;
 
 err_out:
