@@ -65,7 +65,10 @@ static inline int request_firmware_nowait(
 {
 	return -EINVAL;
 }
-
+#ifdef ODM_WT_EDIT
+int request_firmware_select(const struct firmware **fw, const char *name,+
+	struct device *device);
+#endif
 static inline void release_firmware(const struct firmware *fw)
 {
 }

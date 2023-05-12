@@ -55,6 +55,9 @@ enum {
 	 */
 	MIGRATE_CMA,
 #endif
+#ifdef VENDOR_EDIT
+        MIGRATE_OPPO2,
+#endif /* VENDOR_EDIT */
 	MIGRATE_PCPTYPES, /* the number of types on the pcp lists */
 	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
 #ifdef CONFIG_MEMORY_ISOLATION
@@ -148,6 +151,9 @@ enum zone_stat_item {
 	NUMA_OTHER,		/* allocation from other node */
 #endif
 	NR_FREE_CMA_PAGES,
+#ifdef VENDOR_EDIT
+	NR_FREE_OPPO2_PAGES,
+#endif /* VENDOR_EDIT */
 	NR_VM_ZONE_STAT_ITEMS };
 
 enum node_stat_item {
@@ -358,6 +364,10 @@ struct zone {
 	unsigned long watermark[NR_WMARK];
 
 	unsigned long nr_reserved_highatomic;
+
+#ifdef VENDOR_EDIT
+	unsigned long nr_migrate_oppo2_block;
+#endif /* VENDOR_EDIT */
 
 	/*
 	 * We don't know if the memory that we're going to allocate will be
@@ -859,7 +869,7 @@ static inline int is_highmem_idx(enum zone_type idx)
 }
 
 /**
- * is_highmem - helper function to quickly check if a struct zone is a 
+ * is_highmem - helper function to quickly check if a struct zone is a
  *              highmem zone or not.  This is an attempt to keep references
  *              to ZONE_{DMA/NORMAL/HIGHMEM/etc} in general code to a minimum.
  * @zone - pointer to struct zone variable

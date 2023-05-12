@@ -27,6 +27,10 @@ struct rw_semaphore {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map dep_map;
 #endif
+#ifdef ODM_WT_EDIT
+	struct task_struct *debug_current;
+	unsigned long debug_address;
+#endif
 };
 
 #define RWSEM_UNLOCKED_VALUE		0x00000000
