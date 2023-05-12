@@ -28,9 +28,18 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/exception.h>
 #include <soc/qcom/minidump.h>
-
+#ifdef ODM_WT_EDIT
+#include <linux/wt_system_monitor.h>
+#endif /* ODM_WT_EDIT */
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
+
+#ifdef VENDOR_EDIT
+#ifdef HANG_OPPO_ALL
+int kernel_panic_happened = 0;
+int hwt_happened = 0;
+#endif
+#endif  // VENDOR_EDIT
 
 int panic_on_oops = CONFIG_PANIC_ON_OOPS_VALUE;
 static unsigned long tainted_mask;
@@ -46,6 +55,23 @@ EXPORT_SYMBOL_GPL(panic_timeout);
 ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
 
 EXPORT_SYMBOL(panic_notifier_list);
+
+#ifdef VENDOR_EDIT
+#ifdef HANG_OPPO_ALL
+#include <linux/timer.h>
+#include <linux/timex.h>
+#include <linux/rtc.h>
+#include <linux/delay.h>
+#include "op_panic_recovery.h"
+
+extern void log_boot(char *str);
+extern void phx_monit(const char *monitor_command);
+extern int write_to_reserve1(struct pon_struct *pon_info, int fatal_error);
+extern int need_recovery(struct pon_struct *pon_info);
+extern int set_fatal_err_to_recovery(void);
+extern int phx_is_system_boot_completed(void);
+#endif  //HANG_OPPO_ALL
+#endif
 
 static long no_blink(int state)
 {
@@ -122,6 +148,88 @@ void nmi_panic(struct pt_regs *regs, const char *msg)
 }
 EXPORT_SYMBOL(nmi_panic);
 
+#ifdef VENDOR_EDIT
+#ifdef HANG_OPPO_ALL
+void deal_fatal_err(void)
+{
+    struct pon_struct pon_info;
+
+    if(0 == phx_is_system_boot_completed()) {
+        struct timespec ts;
+        struct rtc_time tm;
+        char err_info[60] = {0};
+
+        getnstimeofday(&ts);
+        rtc_time_to_tm(ts.tv_sec, &tm);
+
+        if(kernel_panic_happened) {
+            sprintf(err_info, "SET_BOOTERROR@ERROR_KERNEL_PANIC@%d-%d-%d %d:%d:%d",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            pr_err("SET_BOOTERROR@ERROR_KERNEL_PANIC@%d-%d-%d %d:%d:%d\n",
+               tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+        } else if(hwt_happened) {
+            sprintf(err_info, "SET_BOOTERROR@ERROR_HWT@%d-%d-%d %d:%d:%d",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+            pr_err("SET_BOOTERROR@ERROR_HWT@%d-%d-%d %d:%d:%d\n",
+               tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+        }
+
+        log_boot(err_info);
+        phx_monit(err_info);
+        if(need_recovery(&pon_info)) {
+           set_fatal_err_to_recovery();
+           kernel_restart("recovery");
+        } else {
+            write_to_reserve1(&pon_info, FATAL_FLAG);
+            /* give it some time */
+            mdelay(1000);
+        }
+    } else if(1 == phx_is_system_boot_completed()) {
+        struct timespec ts;
+        struct rtc_time tm;
+        char err_info[60] = {0};
+
+        getnstimeofday(&ts);
+        rtc_time_to_tm(ts.tv_sec, &tm);
+
+        sprintf(err_info, "panic after bootup @%d-%d-%d %d:%d:%d",
+                tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+        pr_err("panic after bootup @%d-%d-%d %d:%d:%d\n",
+               tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+        log_boot(err_info);
+        if(need_recovery(&pon_info)) {
+            set_fatal_err_to_recovery();
+            kernel_restart("recovery");
+        } else {
+            write_to_reserve1(&pon_info, FATAL_FLAG);
+            /* give it some time */
+            mdelay(1000);
+        }
+    } else {
+        struct timespec ts;
+        struct rtc_time tm;
+
+        getnstimeofday(&ts);
+        rtc_time_to_tm(ts.tv_sec, &tm);
+
+        pr_err("/proc/opbootcomplete open/read error @%d-%d-%d %d:%d:%d\n",
+               tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+        if(need_recovery(&pon_info)) {
+            set_fatal_err_to_recovery();
+            kernel_restart("recovery");
+        } else {
+            write_to_reserve1(&pon_info, FATAL_FLAG);
+            /* give it some time */
+            mdelay(1000);
+        }
+    }
+
+}
+#endif
+#endif  /*VENDOR_EDIT*/
+
 /**
  *	panic - halt the system
  *	@fmt: The text string to print
@@ -138,6 +246,26 @@ void panic(const char *fmt, ...)
 	int state = 0;
 	int old_cpu, this_cpu;
 	bool _crash_kexec_post_notifiers = crash_kexec_post_notifiers;
+
+#ifdef VENDOR_EDIT
+#ifdef CONFIG_QCOM_MINIDUMP
+	in_panic++;
+	dumpcpuregs(NULL);
+
+#endif /*CONFIG_QCOM_COMMON_LOG*/
+#endif /*VENDOR_EDIT*/
+
+#ifdef VENDOR_EDIT
+#ifdef HANG_OPPO_ALL
+
+    kernel_panic_happened = 1;
+
+#ifndef CONFIG_MTK_PLATFORM
+    deal_fatal_err();
+#endif
+
+#endif
+#endif  /*VENDOR_EDIT*/
 
 	trace_kernel_panic(0);
 
@@ -177,6 +305,11 @@ void panic(const char *fmt, ...)
 	va_end(args);
 	dump_stack_minidump(0);
 	pr_emerg("Kernel panic - not syncing: %s\n", buf);
+#ifdef ODM_WT_EDIT
+#ifdef WT_BOOT_REASON
+	save_panic_key_log("Kernel panic - not syncing: %s\n", buf);
+#endif
+#endif /* ODM_WT_EDIT */
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*
 	 * Avoid nested stack-dumping if a panic occurs during oops processing

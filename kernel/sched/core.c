@@ -858,7 +858,7 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	rq->clock_task += delta;
 
 #if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING)
-	if ((irq_delta + steal) && sched_feat(NONTASK_CAPACITY))
+	if ((irq_delta + steal) && !!sched_feat(NONTASK_CAPACITY))
 		sched_rt_avg_update(rq, irq_delta + steal);
 #endif
 }
@@ -9680,5 +9680,12 @@ find_first_cpu_bit(struct task_struct *p, const cpumask_t *search_cpus,
 	}
 
 	return i;
+}
+#endif
+
+#ifdef VENDOR_EDIT
+struct task_struct *oppo_get_cpu_task(int cpu)
+{
+	return cpu_curr(cpu);
 }
 #endif

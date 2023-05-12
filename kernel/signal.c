@@ -978,6 +978,53 @@ static inline void userns_fixup_signal_uid(struct siginfo *info, struct task_str
 	return;
 }
 #endif
+#ifdef VENDOR_EDIT
+extern char last_stopper_comm[];
+#endif
+
+#ifdef VENDOR_EDIT
+static bool is_zygote_process(struct task_struct *t)
+{
+	const struct cred *tcred = __task_cred(t);
+
+	struct task_struct * first_child = NULL;
+	if(t->children.next && t->children.next != (struct list_head*)&t->children.next)
+		first_child = container_of(t->children.next, struct task_struct, sibling);
+	if(!strcmp(t->comm, "main") && (tcred->uid.val == 0) && (t->parent != 0 && !strcmp(t->parent->comm,"init"))  )
+		return true;
+	else
+		return false;
+	return false;
+}
+static bool is_systemserver_process(struct task_struct *t) {
+    if (!strcmp(t->comm, "system_server")) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+static bool is_key_process(struct task_struct *t) {
+    struct pid *pgrp;
+    struct task_struct *taskp;
+
+    if (t->pid == t->tgid) {
+        if (is_systemserver_process(t) || is_zygote_process(t)) {
+            return true;
+        }
+    } else {
+        pgrp = task_pgrp(t);
+        if (pgrp != NULL) {
+            taskp = pid_task(pgrp, PIDTYPE_PID);
+            if (taskp != NULL && (is_systemserver_process(taskp) || is_zygote_process(taskp))) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+#endif
 
 static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			int group, int from_ancestor_ns)
@@ -990,6 +1037,24 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	assert_spin_locked(&t->sighand->siglock);
 
 	result = TRACE_SIGNAL_IGNORED;
+#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	if (sig == SIGSTOP && (!strncmp(t->comm,"main", TASK_COMM_LEN) ||
+		!strncmp(t->comm,"system_server", TASK_COMM_LEN) || !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN)))
+		snprintf(last_stopper_comm, 64, "%s[%d]", current->comm, current->pid);
+#endif
+
+#ifdef VENDOR_EDIT
+        if(1) {
+                /*add the SIGKILL print log for some debug*/
+                if((sig == SIGHUP || sig == 33 || sig == SIGKILL || sig == SIGSTOP || sig == SIGABRT || sig == SIGTERM || sig == SIGCONT) && is_key_process(t)) {
+                        //#ifdef VENDOR_EDIT
+                        dump_stack();
+                        //#endif
+                        printk("Some other process %d:%s want to send sig:%d to pid:%d tgid:%d comm:%s\n", current->pid, current->comm,sig, t->pid, t->tgid, t->comm);
+                }
+        }
+#endif
+
 	if (!prepare_signal(sig, t,
 			from_ancestor_ns || (info == SEND_SIG_FORCED)))
 		goto ret;
@@ -2867,15 +2932,35 @@ SYSCALL_DEFINE4(rt_sigtimedwait, const sigset_t __user *, uthese,
  */
 SYSCALL_DEFINE2(kill, pid_t, pid, int, sig)
 {
+#ifdef CONFIG_OPPO_SPECIAL_BUILD
+/*Hanxing.Duan@ODM.RH.BSP.CHARGER debug kill -9 2019.07.29*/
+	int ret=0;
+#endif /*CONFIG_OPPO_SPECIAL_BUILD*/
 	struct siginfo info;
 
 	info.si_signo = sig;
 	info.si_errno = 0;
 	info.si_code = SI_USER;
+
+#ifdef CONFIG_OPPO_SPECIAL_BUILD
+/*Hanxing.Duan@ODM.RH.BSP.CHARGER debug kill -9 2019.07.29*/
+	if(sig==SIGKILL)
+		printk("SIGKILL debug Signal %d ,pid=%d. in\n", sig,pid);
+#endif /*CONFIG_OPPO_SPECIAL_BUILD*/
+
 	info.si_pid = task_tgid_vnr(current);
 	info.si_uid = from_kuid_munged(current_user_ns(), current_uid());
 
+#ifdef CONFIG_OPPO_SPECIAL_BUILD
+/*Hanxing.Duan@ODM.RH.BSP.CHARGER debug kill -9 2019.07.29*/
+	ret=kill_something_info(sig, &info, pid);
+	if(sig==SIGKILL)
+		printk("SIGKILL debug Signal %d ,pid=%d. ret = %d out\n", sig, pid, ret);
+
+	return ret;
+#else /*CONFIG_OPPO_SPECIAL_BUILD*/
 	return kill_something_info(sig, &info, pid);
+#endif /*CONFIG_OPPO_SPECIAL_BUILD*/
 }
 
 static int

@@ -19,6 +19,16 @@
 #include <trace/events/sched.h>
 #include <linux/sched/sysctl.h>
 
+#ifdef VENDOR_EDIT
+#define HUNG_TASK_OPPO_KILL_LEN	128
+char __read_mostly sysctl_hung_task_oppo_kill[HUNG_TASK_OPPO_KILL_LEN];
+char last_stopper_comm[64];
+
+#define TWICE_DEATH_PERIOD	300000000000ULL	//300s
+#define MAX_DEATH_COUNT	3
+#define MAX_IO_WAIT_HUNG 3
+#endif
+
 /*
  * The number of tasks checked:
  */
@@ -81,16 +91,74 @@ static struct notifier_block panic_block = {
 	.notifier_call = hung_task_panic,
 };
 
+#if defined(VENDOR_EDIT)
+static bool is_zygote_process(struct task_struct *t)
+{
+	const struct cred *tcred = __task_cred(t);
+	if(!strcmp(t->comm, "main") && (tcred->uid.val == 0) && (t->parent != 0 && !strcmp(t->parent->comm,"init"))  )
+		return true;
+	else
+		return false;
+	return false;
+}
+#endif
+
+#if defined(VENDOR_EDIT)
+static bool is_fsck_process(struct task_struct *t)
+{
+	if (!strcmp(t->comm, "fsck.fat") || !strcmp(t->comm, "fsck_msdos") || !strcmp(t->comm, "criticallog_syn") || !strncmp(t->comm, "kworker/u16", 11))
+		return true;
+	else
+		return false;
+	return false;
+}
+#endif
+
+#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+static void check_hung_task(struct task_struct *t, unsigned long timeout, unsigned int *iowait_count)
+#else
 static void check_hung_task(struct task_struct *t, unsigned long timeout)
+#endif
 {
 	unsigned long switch_count = t->nvcsw + t->nivcsw;
+
+	#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	static unsigned long long last_death_time = 0;
+	unsigned long long cur_death_time = 0;
+	static int death_count = 0;
+	#endif /* VENDOR_EDIT */
+
+	#ifdef VENDOR_EDIT
+	#define DISP_TASK_COMM_LEN_MASK 10 //SDM845 change the new display thread with multi output, use len for masking
+	if(!strncmp(t->comm,"mdss_dsi_event", TASK_COMM_LEN)||
+		!strncmp(t->comm,"msm-core:sampli", TASK_COMM_LEN)||
+		!strncmp(t->comm,"kworker/u16:1", TASK_COMM_LEN) ||
+		!strncmp(t->comm,"mdss_fb0", TASK_COMM_LEN)||
+		!strncmp(t->comm,"mdss_fb_ffl0", TASK_COMM_LEN)||
+		!strncmp(t->comm,"crtc_commit", DISP_TASK_COMM_LEN_MASK)||
+		!strncmp(t->comm,"crtc_event", DISP_TASK_COMM_LEN_MASK)){
+		return;
+	}
+	#endif
 
 	/*
 	 * Ensure the task is not frozen.
 	 * Also, skip vfork and any other user process that freezer should skip.
 	 */
 	if (unlikely(t->flags & (PF_FROZEN | PF_FREEZER_SKIP)))
-	    return;
+	#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	{
+		if (is_zygote_process(t) || is_fsck_process(t) || !strncmp(t->comm,"system_server", TASK_COMM_LEN)
+			|| !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN)) {
+			if (t->flags & PF_FROZEN)
+				return;
+		}
+		else
+			return;
+	}
+	#else
+		return;
+	#endif
 
 	/*
 	 * When a freshly created task is scheduled once, changes its state to
@@ -107,6 +175,56 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 
 	trace_sched_process_hang(t);
 
+	#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	//if this task blocked at iowait. so maybe we should reboot system first
+	if(t->in_iowait && !is_fsck_process(t)) {
+		printk(KERN_ERR "DeathHealer io wait too long time\n");
+		*iowait_count = *iowait_count + 1;
+	}
+	if (is_zygote_process(t) || is_fsck_process(t) || !strncmp(t->comm,"system_server", TASK_COMM_LEN)
+		|| !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN) ) {
+		if (t->state == TASK_UNINTERRUPTIBLE)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,uninterruptible for %ld seconds", t->comm, timeout);
+		else if (t->state == TASK_STOPPED)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,stopped for %ld seconds by %s", t->comm, timeout, last_stopper_comm);
+		else if (t->state == TASK_TRACED)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,traced for %ld seconds", t->comm, timeout);
+		else
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,unknown hung for %ld seconds", t->comm, timeout);
+
+		printk(KERN_ERR "DeathHealer: task %s:%d blocked for more than %ld seconds in state 0x%lx. Count:%d\n",
+			t->comm, t->pid, timeout, t->state, death_count+1);
+
+		death_count++;
+		cur_death_time = local_clock();
+		if (death_count >= MAX_DEATH_COUNT) {
+			if (cur_death_time - last_death_time < TWICE_DEATH_PERIOD) {
+				if (!is_fsck_process(t)) {
+					printk(KERN_ERR "DeathHealer task %s:%d has been triggered %d times, \
+						last time at: %llu\n", t->comm, t->pid, death_count, last_death_time);
+					BUG();
+				} else {
+					printk(KERN_ERR "DeathHealer task %s:%d has been triggered %d times, \
+						last time at: %llu  (is_fsck_process ignore)\n", t->comm, t->pid, death_count, last_death_time);
+				}
+			}
+		}
+		last_death_time = cur_death_time;
+
+		#ifdef CONFIG_OPPO_SPECIAL_BUILD
+		BUG();
+		#else
+		sched_show_task(t);
+		debug_show_held_locks(t);
+		trigger_all_cpu_backtrace();
+
+		t->flags |= PF_OPPO_KILLING;
+		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, t, true);
+		wake_up_process(t);
+		#endif
+	}
+	#endif
+
 	if (!sysctl_hung_task_warnings && !sysctl_hung_task_panic)
 		return;
 
@@ -114,7 +232,7 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 	 * Ok, the task did not get scheduled for more than 2 minutes,
 	 * complain:
 	 */
-	if (sysctl_hung_task_warnings) {
+	if (sysctl_hung_task_warnings && !is_fsck_process(t)) {
 		sysctl_hung_task_warnings--;
 		pr_err("INFO: task %s:%d blocked for more than %ld seconds.\n",
 			t->comm, t->pid, timeout);
@@ -131,8 +249,17 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 	touch_nmi_watchdog();
 
 	if (sysctl_hung_task_panic) {
-		trigger_all_cpu_backtrace();
-		panic("hung_task: blocked tasks");
+	#ifdef VENDOR_EDIT
+		if (is_zygote_process(t) || !strncmp(t->comm,"system_server", TASK_COMM_LEN)
+			|| !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN)) {
+			if (!is_fsck_process(t)) {
+				trigger_all_cpu_backtrace();
+				panic("hung_task: blocked tasks");
+			} else {
+				pr_info("hung_task: blocked tasks: task %s:%d  (is_fsck_process ignore).\n", t->comm, t->pid);
+			}
+		}
+	#endif
 	}
 }
 
@@ -169,6 +296,9 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 	int max_count = sysctl_hung_task_check_count;
 	int batch_count = HUNG_TASK_BATCHING;
 	struct task_struct *g, *t;
+	#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	unsigned int iowait_count = 0;
+	#endif
 
 	/*
 	 * If the system crashed already then all bets are off,
@@ -187,13 +317,27 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 				goto unlock;
 		}
 		/* use "==" to skip the TASK_KILLABLE tasks waiting on NFS */
+		#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+		if (t->state == TASK_UNINTERRUPTIBLE || t->state == TASK_STOPPED || t->state == TASK_TRACED)
+			check_hung_task(t, timeout,&iowait_count);
+		#else
 		if (t->state == TASK_UNINTERRUPTIBLE)
 			/* Check for selective monitoring */
 			if (!sysctl_hung_task_selective_monitoring ||
 			    t->hang_detection_enabled)
 				check_hung_task(t, timeout);
+		#endif
 	}
  unlock:
+	#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER)
+	if(iowait_count >= MAX_IO_WAIT_HUNG){
+		if(!is_fsck_process(t)) {
+			panic("hung_task:%s=[%u]IO blocked too long time",t->comm, iowait_count);
+		} else {
+			pr_info("hung_task:%s=[%u]IO blocked too long time (is_fsck_process ignore).\n", t->comm,iowait_count);
+		}
+	}
+	#endif
 	rcu_read_unlock();
 }
 

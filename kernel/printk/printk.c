@@ -56,6 +56,21 @@
 #include "braille.h"
 #include "internal.h"
 
+#ifdef VENDOR_EDIT
+#include <soc/oppo/boot_mode.h>
+
+#ifdef CONFIG_OPPO_DAILY_BUILD
+bool printk_disable_uart = false;
+#else
+bool printk_disable_uart = true;
+#endif
+bool oem_get_uartlog_status(void)
+{
+	return !printk_disable_uart;
+}
+#endif /*VENDOR_EDIT*/
+
+
 #ifdef CONFIG_EARLY_PRINTK_DIRECT
 extern void printascii(char *);
 #endif
@@ -326,7 +341,9 @@ static int console_may_schedule;
  * with a space character and terminated by a newline. All possible
  * non-prinatable characters are escaped in the "\xff" notation.
  */
-
+#ifdef ODM_WT_EDIT
+#include <linux/sched.h>
+#endif /* ODM_WT_EDIT */
 enum log_flags {
 	LOG_NOCONS	= 1,	/* already flushed, do not print to console */
 	LOG_NEWLINE	= 2,	/* text ended with a newline */
@@ -342,6 +359,10 @@ struct printk_log {
 	u8 facility;		/* syslog facility */
 	u8 flags:5;		/* internal record flags */
 	u8 level:3;		/* syslog level */
+#ifdef ODM_WT_EDIT
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
+#endif /* ODM_WT_EDIT */
 }
 #ifdef CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS
 __packed __aligned(4)
@@ -578,6 +599,11 @@ static int log_store(int facility, int level,
 	msg->facility = facility;
 	msg->level = level & 7;
 	msg->flags = flags & 0x1f;
+#ifdef ODM_WT_EDIT
+	msg->pid = current->pid;
+	memset(msg->comm, 0, TASK_COMM_LEN);
+	memcpy(msg->comm, current->comm, TASK_COMM_LEN-1);
+#endif /* ODM_WT_EDIT */
 	if (ts_nsec > 0)
 		msg->ts_nsec = ts_nsec;
 	else
@@ -1172,6 +1198,12 @@ static inline void boot_delay_msec(int level)
 }
 #endif
 
+#ifdef VENDOR_EDIT
+#if !(defined(CONFIG_OPPO_DAILY_BUILD) || defined(CONFIG_OPPO_SPECIAL_BUILD))
+module_param_named(disable_uart, printk_disable_uart, bool, S_IRUGO | S_IWUSR);
+#endif
+#endif /*VENDOR_EDIT*/
+
 static bool printk_time = IS_ENABLED(CONFIG_PRINTK_TIME);
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
 
@@ -1190,6 +1222,19 @@ static size_t print_time(u64 ts, char *buf)
 	return sprintf(buf, "[%5lu.%06lu] ",
 		       (unsigned long)ts, rem_nsec / 1000);
 }
+
+#ifdef ODM_WT_EDIT
+static bool printk_task_info = 1;
+module_param_named(task_info, printk_task_info, bool, S_IRUGO | S_IWUSR);
+static size_t print_task_info(pid_t pid, const char *task_name,char *buf)
+{
+	if (!printk_task_info)
+		return 0;
+	if (!buf)
+		return snprintf(NULL, 0, "[%d, %s]", pid, task_name);
+	return sprintf(buf, "[%d, %s]", pid, task_name);
+}
+#endif /* ODM_WT_EDIT */
 
 static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 {
@@ -1211,6 +1256,9 @@ static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 	}
 
 	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+#ifdef ODM_WT_EDIT
+	len += print_task_info(msg->pid, msg->comm, buf ? buf + len : NULL);
+#endif /* ODM_WT_EDIT */
 	return len;
 }
 
@@ -1574,6 +1622,14 @@ static void call_console_drivers(int level,
 		return;
 
 	for_each_console(con) {
+#ifdef VENDOR_EDIT
+		if (get_boot_mode() == MSM_BOOT_MODE__FACTORY) {
+			printk_disable_uart = true;
+		}
+
+		if (printk_disable_uart && (con->flags & CON_CONSDEV))
+			continue;
+#endif
 		if (exclusive_console && con != exclusive_console)
 			continue;
 		if (!(con->flags & CON_ENABLED))
