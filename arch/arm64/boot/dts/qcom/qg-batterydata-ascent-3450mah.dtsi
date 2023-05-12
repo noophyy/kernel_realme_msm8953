@@ -15,7 +15,7 @@ qcom,ascent_3450mah {
 	qcom,max-voltage-uv = <4350000>;
 	qcom,fg-cc-cv-threshold-mv = <4340>;
 	qcom,fastchg-current-ma = <3450>;
-	qcom,batt-id-kohm = <60>;
+	qcom,batt-id-kohm = <150>;
 	qcom,battery-beta = <3435>;
 	qcom,battery-therm-kohm = <68>;
 	qcom,battery-type =

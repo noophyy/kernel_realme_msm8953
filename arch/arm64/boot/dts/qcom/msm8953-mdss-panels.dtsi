@@ -9,7 +9,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+// #ifndef ODM_WT_EDIT
+/*  remove not to use panel
 #include "dsi-panel-sim-video.dtsi"
 #include "dsi-panel-sim-dualmipi-video.dtsi"
 #include "dsi-panel-sim-cmd.dtsi"
@@ -29,6 +30,7 @@
 #include "dsi-panel-hx8394d-wxga-video.dtsi"
 #include "dsi-panel-inxnt51021-1200p-video.dtsi"
 
+// remove not to use panel info
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
 		#address-cells = <1>;
@@ -202,3 +204,12 @@
 		25 20 08 0A 06 03 04 a0
 		25 1D 08 0A 06 03 04 a0];
 };
+*/
+// #else /* ODM_WT_EDIT */
+#include "dsi-panel-sim-video.dtsi"
+#include "dsi-panel-ilt9881h-hlt-new-id-hdp-video.dtsi"
+#include "dsi-panel-nt36525-truly-hdp-video.dtsi"
+#include "dsi-panel-hx831112a_huaxian-hdp-video.dtsi"
+#include "dsi-panel-ilt9881h_hlt-hdp-video.dtsi"
+#include "dsi-panel-ilt7807g-huaxian-hdp-video.dtsi"
+// #endif /* ODM_WT_EDIT */

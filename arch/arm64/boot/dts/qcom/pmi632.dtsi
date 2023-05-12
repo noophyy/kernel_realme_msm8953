@@ -31,7 +31,7 @@
 			reg = <0x800 0x100>;
 
 			qcom,secondary-pon-reset;
-			qcom,s3-src = "kpdpwr";
+			qcom,s3-src = "kpdpwr-and-resin";
 		};
 
 		pmi632_vadc: vadc@3100 {
@@ -160,7 +160,11 @@
 				qcom,decimation = <2>;
 				qcom,pre-div-channel-scaling = <0>;
 				qcom,calibration-type = "ratiometric";
-				qcom,scale-function = <24>;
+				//#ifndef ODM_WT_EDIT
+				//qcom,scale-function = <24>;
+				//#else /* ODM_WT_EDIT */
+				qcom,scale-function = <22>;
+				//#endif /* ODM_WT_EDIT */
 				qcom,hw-settle-time = <0>;
 				qcom,fast-avg-setup = <0>;
 				qcom,cal-val = <0>;
@@ -314,18 +318,25 @@
 
 			qcom,pmic-revid = <&pmi632_revid>;
 			dpdm-supply = <&qusb_phy>;
-			qcom,auto-recharge-soc = <98>;
 			qcom,chg-vadc = <&pmi632_vadc>;
-			qcom,flash-disable-soc = <10>;
-			qcom,sw-jeita-enable;
-			qcom,step-charging-enable;
-			qcom,hw-die-temp-mitigation;
-			qcom,hw-connector-mitigation;
+			//qcom,flash-disable-soc = <10>;
+			//qcom,step-charging-enable;
+			//#ifndef ODM_WT_EDIT
+			//qcom,hw-die-temp-mitigation;
+			//qcom,hw-connector-mitigation;
+			//#endif /* ODM_WT_EDIT */
 			qcom,connector-internal-pull-kohm = <100>;
 
 			qcom,thermal-mitigation
 				= <3000000 2500000 2000000 1500000
 					1000000 500000>;
+
+			//#ifdef ODM_WT_EDIT
+			pinctrl-names = "usbid_default","usbid_sleep";
+			pinctrl-0 = <&usbid_default>;
+			pinctrl-1 = <&usbid_sleep>;
+			qcom,usbid-gpio = <&tlmm 13 0>;
+			//#endif /* ODM_WT_EDIT */
 
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
@@ -553,7 +564,13 @@
 			compatible = "qcom,qpnp-vibrator-ldo";
 			reg = <0x5700 0x100>;
 			qcom,vib-ldo-volt-uv = <3000000>;
+			//#ifndef ODM_WT_EDIT
+			//MaoSheng.Zhang BSP.Charger.Basic, 1372106, 2018/07/06, Modify for overdrive voltage adjust
+			//qcom,vib-overdrive-volt-uv = <3544000>;
+			//#else
+			qcom,vib-overdrive-volt-uv = <3300000>;
 			qcom,disable-overdrive;
+			//#endif
 		};
 
 		pmi632_pwm: qcom,pwms@b300 {
@@ -625,7 +642,6 @@
 			interrupt-names = "sc-irq";
 
 			qcom,pmic-revid = <&pmi632_revid>;
-			qcom,voltage-step-ramp;
 
 			lcdb_ldo_vreg: ldo {
 				label = "ldo";
@@ -663,6 +679,7 @@
 			qcom,short-circuit-det;
 			qcom,open-circuit-det;
 			qcom,vph-droop-det;
+			qcom,thermal-thrsh2 = <122>;
 			qcom,thermal-derate-en;
 			qcom,thermal-derate-current = <200 500 1000>;
 			qcom,isc-delay = <192>;
@@ -671,7 +688,11 @@
 			pmi632_flash0: qcom,flash_0 {
 				label = "flash";
 				qcom,led-name = "led:flash_0";
-				qcom,max-current = <1500>;
+				//#ifdef ODM_WT_EDIT
+				qcom,max-current = <1000>;
+				//#else
+				//qcom,max-current = <1500>;
+				//#endif /*ODM_WT_EDIT*/
 				qcom,default-led-trigger = "flash0_trigger";
 				qcom,id = <0>;
 				qcom,current-ma = <1000>;
@@ -680,6 +701,9 @@
 				qcom,hdrm-voltage-mv = <400>;
 				qcom,hdrm-vol-hi-lo-win-mv = <100>;
 			};
+
+			//#ifndef ODM_WT_EDIT
+			/*
 
 			pmi632_flash1: qcom,flash_1 {
 				label = "flash";
@@ -693,30 +717,44 @@
 				qcom,hdrm-voltage-mv = <400>;
 				qcom,hdrm-vol-hi-lo-win-mv = <100>;
 			};
+			*/
+			//#endif /*ODM_WT_EDIT*/
 
 			pmi632_torch0: qcom,torch_0 {
 				label = "torch";
 				qcom,led-name = "led:torch_0";
-				qcom,max-current = <500>;
+				//#ifdef ODM_WT_EDIT
+				qcom,max-current = <150>;
+				//#else
+				//qcom,max-current = <500>;
+				//#endif /*ODM_WT_EDIT*/
 				qcom,default-led-trigger = "torch0_trigger";
 				qcom,id = <0>;
-				qcom,current-ma = <300>;
+				//#ifdef ODM_WT_EDIT
+				qcom,current-ma = <50>;
+				//#else
+				//qcom,current-ma = <300>;
+				//#endif /*ODM_WT_EDIT*/
 				qcom,ires-ua = <12500>;
 				qcom,hdrm-voltage-mv = <400>;
 				qcom,hdrm-vol-hi-lo-win-mv = <100>;
 			};
 
+			//#ifndef ODM_WT_EDIT
+
 			pmi632_torch1: qcom,torch_1 {
 				label = "torch";
 				qcom,led-name = "led:torch_1";
-				qcom,max-current = <500>;
+				qcom,max-current = <150>;
 				qcom,default-led-trigger = "torch1_trigger";
 				qcom,id = <1>;
-				qcom,current-ma = <300>;
+				qcom,current-ma = <50>;
 				qcom,ires-ua = <12500>;
 				qcom,hdrm-voltage-mv = <400>;
 				qcom,hdrm-vol-hi-lo-win-mv = <100>;
 			};
+
+			//#endif /*ODM_WT_EDIT*/
 
 			pmi632_switch0: qcom,led_switch_0 {
 				label = "switch";
@@ -736,6 +774,22 @@
 
 	};
 };
+
+//#ifdef ODM_WT_EDIT
+&soc {
+	led_flash0: qcom,camera-flash {
+		cell-index = <0>;
+		compatible = "qcom,camera-flash";
+		qcom,flash-name = "pmic";
+		qcom,flash-type = <1>;
+		qcom,flash-source = <&pmi632_flash0>;
+		qcom,torch-source = <&pmi632_torch0 &pmi632_torch1>;
+		qcom,switch-source = <&pmi632_switch0>;
+	};
+};
+//#else
+/*
+
 &soc {
 	led_flash0: qcom,camera-flash {
 		cell-index = <0>;
@@ -746,6 +800,9 @@
 		qcom,switch-source = <&pmi632_switch0>;
 	};
 };
+
+*/
+//#endif /*ODM_WT_EDIT*/
 
 &thermal_zones {
 	pmi-ibat-lvl0 {

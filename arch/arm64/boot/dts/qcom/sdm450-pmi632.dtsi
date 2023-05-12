@@ -36,8 +36,15 @@
 /{
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "qg-batterydata-ascent-3450mah.dtsi"
-		#include "qg-batterydata-mlp356477-2800mah.dtsi"
+		//#ifndef ODM_WT_EDIT
+		//#include "qg-batterydata-ascent-3450mah.dtsi"
+		//#include "qg-batterydata-mlp356477-2800mah.dtsi"
+		//#else /* ODM_WT_EDIT */
+		#include "qg-batterydata-OPPO-DD003desay-ATL-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-ATL_300-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-SDI-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-SDI_300-4v4-4230mAh.dtsi"
+		//#endif /* ODM_WT_EDIT */
 	};
 };
 
@@ -64,12 +71,20 @@
 
 &pmi632_qg {
 	qcom,battery-data = <&mtp_batterydata>;
+	qcom,qg-restore-batt-info;
 };
 
 &pmi632_charger {
 	qcom,battery-data = <&mtp_batterydata>;
+	qcom,usb-icl-ua = <2000000>;
+	qcom,auto-recharge-vbat-mv = <4270>;
+	qcom,sw-jeita-enable;
+	qcom,float-option = <1>;
 };
 
+// #ifdef ODM_WT_EDIT
+//Tianchen.Zhao@ODM_RH.BSP.Storage Porting
+/*
 &pm8953_gpios {
 	bklt_en {
 		bklt_en_default: bklt_en_default {
@@ -80,6 +95,8 @@
 		};
 	};
 };
+*/
+// #endif
 
 &pm8953_pwm {
 	status = "ok";
@@ -393,3 +410,36 @@
 		  };
 	};
 };
+
+&reserved_memory {
+	wt_share_mem: wt_region@92000000 {
+		compatible = "wt_share_mem";
+		no-map;
+		reg = <0 0x92000000 0 0x00100000>;
+	};
+
+	pstore: ramoops@92100000 {
+		compatible = "ramoops";
+		reg = <0 0x92100000 0 0x100000>;
+		ecc-size	= <0x10>;
+		console-size	= <0x80000>;
+		record-size	= <0x40000>;
+		ftrace-size	= <0x20000>;
+		pmsg-size	= <0x20000>;
+	};
+};
+
+&soc {
+	qcom,msm-imem@8600000 {
+		wt_reset_reason_addr@fe4 {
+			compatible = "qcom,msm-imem-wt_reset_reason_addr";
+			reg = <0xfe4 4>;
+		};
+
+		tz_reset_reason_addr@7a4 {
+			compatible = "qcom,msm-imem-tz_reset_reason_addr";
+			reg = <0x7a4 4>;
+		};
+	};
+};
+

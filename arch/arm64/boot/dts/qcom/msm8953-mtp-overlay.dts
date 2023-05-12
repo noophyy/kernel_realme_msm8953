@@ -24,8 +24,10 @@
 &vendor {
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "batterydata-itech-3000mah.dtsi"
-		#include "batterydata-ascent-3450mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-ATL-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-ATL_300-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-SDI-4v4-4230mAh.dtsi"
+		#include "qg-batterydata-OPPO-DD003desay-SDI_300-4v4-4230mAh.dtsi"
 	};
 };
 

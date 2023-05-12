@@ -51,7 +51,7 @@
 					compatible = "android,vendor";
 					dev = "/dev/block/platform/soc/7824900.sdhci/by-name/vendor";
 					type = "ext4";
-					mnt_flags = "ro,barrier=1,discard";
+					mnt_flags = "ro,barrier=1,async_discard";
 					fsmgr_flags = "wait,avb";
 					status = "ok";
 				};
@@ -60,7 +60,8 @@
 		};
 	};
 
-	reserved-memory {
+	//we need to refer this node, so need an aliase name
+	reserved_memory: reserved-memory {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
@@ -68,7 +69,7 @@
 		other_ext_mem: other_ext_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x0 0x85b00000 0x0 0xd00000>;
+			reg = <0x0 0x84F00000 0x0 0x1900000>;
 		};
 
 		modem_mem: modem_region@0 {
@@ -77,6 +78,8 @@
 			reg = <0x0 0x86c00000 0x0 0x6a00000>;
 		};
 
+		//#ifndef VENDOR_EDIT
+		/*
 		adsp_fw_mem: adsp_fw_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
@@ -88,6 +91,21 @@
 			no-map;
 			reg = <0x0 0x8e700000 0x0 0x700000>;
 		};
+
+		*/
+		//#else VENDOR_EDIT
+		adsp_fw_mem: adsp_fw_region@0 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0x8d600000 0x0 0x1600000>;
+		};
+
+		wcnss_fw_mem: wcnss_fw_region@0 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0x8ec00000 0x0 0x700000>;
+		};
+		//#endif
 
 		venus_mem: venus_region@0 {
 			compatible = "shared-dma-pool";
@@ -119,11 +137,21 @@
 			size = <0 0x400000>;
 		};
 
+		//#ifndef VENDOR_EDIT
+		/*
 		adsp_mem: adsp_region@0 {
 			compatible = "shared-dma-pool";
 			reusable;
 			size = <0 0x400000>;
 		};
+		*/
+		//#else VENDOR_EDIT
+		adsp_mem: adsp_region@0 {
+			compatible = "removed-dma-pool";
+			no-map;
+			size = <0 0x400000>;
+		};
+		//#endif
 
 		dfps_data_mem: dfps_data_mem@90000000 {
 			reg = <0 0x90000000 0 0x1000>;
@@ -149,6 +177,15 @@
 			reusable;
 			size = <0x400000>;
 		};
+
+		/*#ifdef VENDOR_EDIT*/
+		ramoops@0x91400000 {
+			compatible = "ramoops";
+			reg = <0x0 0x91400000 0x0 0x100000>;
+			record-size = <0x0 0x00020000>;
+			no-dump-oops;
+		};
+		/*#endif VENDOR_EDIT*/
 	};
 
 	aliases {
@@ -337,7 +374,27 @@
 		reg-names = "rmtfs";
 		qcom,client-id = <0x00000001>;
 	};
+//        /* #ifdef ODM_WT_EDIT*/
+//        qcom,oem_rmtfs_sharedmem@00000000 {
+//                compatible = "qcom,sharedmem-uio";
+//                reg = <0x00000000 0x00001000>;
+//                reg-names = "oemrmtfs";
+//                qcom,client-id = <0x00000002>;
+//        };
+//	/* #endif ODM_WT_EDIT  */
 
+        //#ifdef VENDOR_EDIT
+        //#ifdef FEATURE_OPPO_NV_BACKUP
+        //add for creating a shared memory with uio for nv backup and restore
+        qcom,oembackup_sharedmem@0 {
+            compatible = "qcom,sharedmem-uio";
+            reg = <0x0 0x00100000>;
+            reg-names = "oembackup";
+            qcom,client-id = <0x00000004>;
+            qcom,guard-memory;
+        };
+        //#endif /* FEATURE_OPPO_NV_BACKUP */
+        //#endif /* VENDOR_EDIT */
 	restart@4ab000 {
 		compatible = "qcom,pshold";
 		reg = <0x4ab000 0x4>,
@@ -415,9 +472,45 @@
 		#thermal-sensor-cells = <1>;
 	};
 
-	qcom_seecom: qseecom@85b00000 {
+//#ifdef VENDOR_EDIT
+	oppo_secure_common {
+		compatible = "oppo,secure_common";
+       };
+//#endif
+
+	silead_fp {
+	   compatible = "sil,silead_fp";
+		qcom,qup-id = <7>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <48 0x1>;
+		irq-gpios = <&tlmm 48 0x00>;
+		rst-gpios = <&tlmm 140 0x00>;
+		vddio-gpios = <&tlmm 134 0x00>;
+		spi-max-frequency = <4800000>;
+		status="ok";
+	};
+
+	 /*fpc fingerprint*/
+	 fpc1020 {
+	     status = "ok";
+	     compatible = "fpc,fpc1020";
+	     interrupt-parent = <&tlmm>;
+	     interrupts = <48 0x0>;
+	     fpc,gpio_rst    = <&tlmm 140 0x0>;
+	     fpc,gpio_irq    = <&tlmm 48 0x0>;
+
+	     pinctrl-names = "fpc1020_reset_reset",
+	         "fpc1020_reset_active",
+	         "fpc1020_irq_active";
+
+	     pinctrl-0 = <&msm_gpio_140>;
+	     pinctrl-1 = <&msm_gpio_140_output_high>;
+	     pinctrl-2 = <&msm_gpio_48>;
+	 };
+
+	qcom_seecom: qseecom@84F00000 {
 		compatible = "qcom,qseecom";
-		reg = <0x85b00000 0x800000>;
+		reg = <0x84F00000 0x1400000>;
 		reg-names = "secapp-region";
 		qcom,hlos-num-ce-hw-instances = <1>;
 		qcom,hlos-ce-hw-instance = <0>;
@@ -548,8 +641,10 @@
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 108 0
-				1 &intc 0 238 0
-				2 &tlmm 13 0>;
+				1 &intc 0 238 0>;
+				//#ifdef ODM_WT_EDIT
+				//2 &tlmm 13 0>;
+				//#endif /* ODM_WT_EDIT */
 
 		qcom,inject-rx-on-wakeup;
 		qcom,rx-char-to-inject = <0xFD>;
@@ -691,6 +786,9 @@
 		qcom,ver-reg-exists;
 		qcom,bam-consumer-pipe-index = <8>;
 		qcom,bam-producer-pipe-index = <9>;
+		dmas = <&dma_blsp1 8 64 0x20000020 0x20>,
+			<&dma_blsp1 9 32 0x20000020 0x20>;
+		dma-names = "tx", "rx";
 		qcom,master-id = <86>;
 		status = "disabled";
 	};
@@ -1298,7 +1396,11 @@
 		reg = <0xb017000 0x1000>;
 		reg-names = "wdt-base";
 		interrupts = <0 3 0>, <0 4 0>;
-		qcom,bark-time = <11000>;
+		//#ifdef VENDOR_EDIT //yixue.ge modify bark time to 20s
+		//qcom,bark-time = <11000>;
+		//#else
+		qcom,bark-time = <20000>;
+		//#endif
 		qcom,pet-time = <9360>;
 		qcom,ipi-ping;
 		qcom,wakeup-enable;
@@ -1394,7 +1496,9 @@
 			compatible = "qcom,memshare-peripheral";
 			qcom,peripheral-size = <0x500000>;
 			qcom,client-id = <1>;
-			qcom,allocate-boot-time;
+                /*ifndef VENDOR_EDIT*/
+                //     qcom,allocate-boot-time;
+                /*endif /* VENDOR_EDIT */
 			label = "modem";
 		};
 	};
@@ -1813,6 +1917,21 @@
 		vdda33-supply = <&pm8953_l13>;
 		qcom,vdd-voltage-level = <0 925000 925000>;
 
+		//#ifdef ODM_WT_EDIT
+		//Tianchen.Zhao@ODM_RH.BSP.Storage Porting
+		qcom,qusb-phy-init-seq = <0xf8 0x80
+					0x23 0x84
+					0x83 0x88
+					0xc7 0x8c
+					0x14 0x9c
+					0x30 0x08
+					0x79 0x0c
+					0x21 0x10
+					0x00 0x90
+					0x9f 0x1c
+					0x00 0x18>;
+		//#else
+		/*
 		qcom,qusb-phy-init-seq = <0xf8 0x80
 					0xb3 0x84
 					0x83 0x88
@@ -1824,6 +1943,9 @@
 					0x00 0x90
 					0x9f 0x1c
 					0x00 0x18>;
+		*/
+		//#endif
+
 		phy_type= "utmi";
 		qcom,phy-clk-scheme = "cml";
 		qcom,major-rev = <1>;
@@ -2203,7 +2325,6 @@
 
 		clock-names = "xo", "rf_clk", "measure", "wcnss_debug";
 
-		qcom,has-autodetect-xo;
 		qcom,is-pronto-v3;
 		qcom,has-pronto-hw;
 		qcom,has-vsys-adc-channel;
