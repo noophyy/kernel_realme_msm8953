@@ -3445,7 +3445,7 @@ static int ufshcd_exec_dev_cmd(struct ufs_hba *hba,
 {
 	struct ufshcd_lrb *lrbp;
 	int err;
-	int tag;
+	int tag = 0;
 	struct completion wait;
 	unsigned long flags;
 
@@ -6931,7 +6931,7 @@ static int ufshcd_issue_tm_cmd(struct ufs_hba *hba, int lun_id, int task_id,
 	struct utp_upiu_task_req *task_req_upiup;
 	struct Scsi_Host *host;
 	unsigned long flags;
-	int free_slot;
+	int free_slot = 0;
 	int err;
 	int task_tag;
 
