@@ -15,6 +15,9 @@
 #include <linux/wait.h>
 #include <linux/stringify.h>
 #include <linux/power_supply.h>
+#ifdef ODM_WT_EDIT
+#include <linux/headset_notifier.h>
+#endif
 #include "wcdcal-hwdep.h"
 #include <sound/jack.h>
 
@@ -138,9 +141,17 @@ do {                                                    \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5)
 #define OCP_ATTEMPT 20
+#ifndef VENDOR_EDIT
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
+#else
+#define HS_DETECT_PLUG_TIME_MS (5 * 1000)
+#endif /*VENDOR_EDIT*/
 #define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
+#ifndef VENDOR_EDIT
 #define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+#else /* VENDOR_EDIT */
+#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 1200
+#endif /* VENDOR_EDIT */
 #define GND_MIC_SWAP_THRESHOLD 4
 #define GND_MIC_USBC_SWAP_THRESHOLD 2
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
@@ -150,7 +161,12 @@ do {                                                    \
 #define FAKE_REM_RETRY_ATTEMPTS 3
 #define MAX_IMPED 60000
 
+#ifndef VENDOR_EDIT
 #define WCD_MBHC_BTN_PRESS_COMPL_TIMEOUT_MS  50
+#else /* VENDOR_EDIT */
+#define WCD_MBHC_BTN_PRESS_COMPL_TIMEOUT_MS  100
+#endif /* VENDOR_EDIT */
+
 #define ANC_DETECT_RETRY_CNT 7
 #define WCD_MBHC_SPL_HS_CNT  1
 

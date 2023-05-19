@@ -58,7 +58,11 @@
 #define SPK_PMD 2
 #define SPK_PMU 3
 
+#ifndef ODM_WT_EDIT
 #define MICBIAS_DEFAULT_VAL 1800000
+#else /* ODM_WT_EDIT */
+#define MICBIAS_DEFAULT_VAL 2700000
+#endif /* ODM_WT_EDIT */
 #define MICBIAS_MIN_VAL 1600000
 #define MICBIAS_STEP_SIZE 50000
 
@@ -488,6 +492,9 @@ static int msm_anlg_cdc_mbhc_map_btn_code_to_num(struct snd_soc_codec *codec)
 		btn = -EINVAL;
 		break;
 	};
+#ifdef VENDOR_EDIT
+	pr_info("%s: btn is %d", __func__, btn);
+#endif /* VENDOR_EDIT */
 
 	return btn;
 }
@@ -2698,6 +2705,9 @@ static void wcd_imped_config(struct snd_soc_codec *codec,
 
 	value = wcd_get_impedance_value(imped);
 
+	#if defined(ODM_WT_EDIT) && defined(WT_COMPILE_FACTORY_VERSION)
+	value = 4;
+	#endif  /* ODM_WT_EDIT */
 	if (value < wcd_imped_val[0]) {
 		dev_dbg(codec->dev,
 			"%s, detected impedance is less than 4 Ohm\n",
@@ -2851,6 +2861,9 @@ static int msm_anlg_cdc_lo_dac_event(struct snd_soc_dapm_widget *w,
 			MSM89XX_PMIC_ANALOG_RX_LO_DAC_CTL, 0x08, 0x08);
 		snd_soc_update_bits(codec,
 			MSM89XX_PMIC_ANALOG_RX_LO_DAC_CTL, 0x40, 0x40);
+		#ifdef ODM_WT_EDIT
+		msleep(5);
+		#endif
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec,
@@ -3030,6 +3043,9 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"Ext Spk", NULL, "Ext Spk Switch"},
 	{"Ext Spk Switch", "On", "HPHL PA"},
 	{"Ext Spk Switch", "On", "HPHR PA"},
+	#ifdef ODM_WT_EDIT
+	{"Ext Spk Switch", "On", "LINEOUT"},
+	#endif /* ODM_WT_EDIT */
 
 	{"HPHL PA", NULL, "HPHL"},
 	{"HPHR PA", NULL, "HPHR"},
@@ -4192,6 +4208,9 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Playback");
 	snd_soc_dapm_ignore_suspend(dapm, "PDM Capture");
 
+	#ifdef ODM_WT_EDIT
+	snd_soc_dapm_ignore_suspend(dapm, "Ext Spk");
+	#endif
 	snd_soc_dapm_sync(dapm);
 
 	return 0;

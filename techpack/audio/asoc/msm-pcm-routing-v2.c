@@ -12984,6 +12984,12 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 		"Quinary MI2S_RX Hostless Playback",
 		0, 0, 0, 0),
 
+#ifdef VENDOR_EDIT
+        SND_SOC_DAPM_AIF_IN("TERT_MI2S_DL_HL_MMI",
+                "Tertiary MI2S_TX Hostless Playback",
+                0, 0, 0, 0),
+#endif /* VENDOR_EDIT */
+
 	SND_SOC_DAPM_AIF_IN("AUXPCM_DL_HL", "AUXPCM_HOSTLESS Playback",
 		0, 0, 0, 0),
 	SND_SOC_DAPM_AIF_OUT("AUXPCM_UL_HL", "AUXPCM_HOSTLESS Capture",

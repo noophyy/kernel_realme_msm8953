@@ -81,7 +81,11 @@ static int msm8952_wsa_switch_event(struct snd_soc_dapm_widget *w,
 static struct wcd_mbhc_config mbhc_cfg = {
 	.read_fw_bin = false,
 	.calibration = NULL,
+	#ifndef VENDOR_EDIT
 	.detect_extn_cable = true,
+	#else /* VENDOR_EDIT */
+	.detect_extn_cable = false,
+	#endif /* VENDOR_EDIT */
 	.mono_stero_detection = false,
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = false,
@@ -329,6 +333,9 @@ int is_ext_spk_gpio_support(struct platform_device *pdev,
 	return 0;
 }
 
+#ifdef ODM_WT_EDIT
+#define AW_PA_MODE 3
+#endif /* ODM_WT_EDIT */
 static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 {
 	struct snd_soc_card *card = codec->component.card;
@@ -345,6 +352,7 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 		enable ? "Enable" : "Disable");
 
 	if (enable) {
+		#ifndef ODM_WT_EDIT
 		ret =  msm_cdc_pinctrl_select_active_state(
 					pdata->spk_ext_pa_gpio_p);
 		if (ret) {
@@ -353,7 +361,15 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 			return ret;
 		}
 		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
+		#else /* ODM_WT_EDIT */
+		for(ret = 0; ret < AW_PA_MODE; ret++) {
+			gpio_direction_output(pdata->spk_ext_pa_gpio, false);
+			gpio_direction_output(pdata->spk_ext_pa_gpio, true);
+		}
+		usleep_range(13000, 13000 + 2000);
+		#endif /* ODM_WT_EDIT */
 	} else {
+		#ifndef ODM_WT_EDIT
 		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
 		ret = msm_cdc_pinctrl_select_sleep_state(
 				pdata->spk_ext_pa_gpio_p);
@@ -362,6 +378,11 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 					__func__, "ext_spk_gpio");
 			return ret;
 		}
+		#else /* ODM_WT_EDIT */
+		gpio_direction_output(pdata->spk_ext_pa_gpio, enable);
+		usleep_range(3000, 3000 + 2000);
+		#endif /* ODM_WT_EDIT */
+
 	}
 	return 0;
 }
@@ -1516,7 +1537,12 @@ static void *def_msm8952_wcd_mbhc_cal(void)
 		return NULL;
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm8952_wcd_cal)->X) = (Y))
+	#ifndef ODM_WT_EDIT
 	S(v_hs_max, 1500);
+	#else /* ODM_WT_EDIT */
+	S(v_hs_max, 1700);
+	#endif /* ODM_WT_EDIT */
+
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm8952_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1539,16 +1565,35 @@ static void *def_msm8952_wcd_mbhc_cal(void)
 	 * 210-290 == Button 2
 	 * 360-680 == Button 3
 	 */
+
+	#ifndef VENDOR_EDIT
 	btn_low[0] = 75;
 	btn_high[0] = 75;
+	#ifndef ODM_WT_EDIT
 	btn_low[1] = 150;
 	btn_high[1] = 150;
+	#else /* ODM_WT_EDIT */
+	btn_low[1] = 130;
+	btn_high[1] = 130;
+	#endif /* ODM_WT_EDIT */
 	btn_low[2] = 225;
 	btn_high[2] = 225;
 	btn_low[3] = 450;
 	btn_high[3] = 450;
 	btn_low[4] = 500;
 	btn_high[4] = 500;
+	#else /*VENDOR_EDIT*/
+	btn_low[0] = 60;
+	btn_high[0] = 130;
+	btn_low[1] = 131;
+	btn_high[1] = 133;
+	btn_low[2] = 240;
+	btn_high[2] = 280;
+	btn_low[3] = 450;
+	btn_high[3] = 470;
+	btn_low[4] = 451;
+	btn_high[4] = 471;
+	#endif /*VENDOR_EDIT*/
 
 	return msm8952_wcd_cal;
 }
@@ -1860,6 +1905,9 @@ static struct snd_soc_dai_link msm8952_dai[] = {
 		.platform_name  = "msm-pcm-hostless",
 		.dynamic = 1,
 		.dpcm_capture = 1,
+		#ifdef VENDOR_EDIT
+		.dpcm_playback = 1,
+		#endif /* VENDOR_EDIT */
 		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
 			SND_SOC_DPCM_TRIGGER_POST},
 		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,

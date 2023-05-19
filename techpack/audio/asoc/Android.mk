@@ -38,6 +38,13 @@ ifneq ($(findstring opensource,$(LOCAL_PATH)),)
 	AUDIO_BLD_DIR := $(shell pwd)/vendor/qcom/opensource/audio-kernel
 endif # opensource
 
+ifeq ($(ODM_WT_EDIT),yes)
+	LOCAL_CFLAGS += -DODM_WT_EDIT
+ifeq ($(WT_COMPILE_FACTORY_VERSION),yes)
+	LOCAL_CFLAGS += -DWT_COMPILE_FACTORY_VERSION
+endif
+endif
+
 ifeq ($(AUDIO_FEATURE_ENABLED_DLKM_8909W),true)
 DLKM_DIR := $(TOP)/device/qcom/msm8909w/common/dlkm
 else

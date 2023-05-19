@@ -33,6 +33,16 @@
 #include "wcd-mbhc-adc.h"
 #include "wcd-mbhc-v2-api.h"
 
+#ifdef VENDOR_EDIT
+#include <linux/version.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#include <linux/wakelock.h>
+static struct wake_lock headset_detect;
+#else
+static struct wakeup_source  *headset_detect;
+#endif
+static int headset_detect_inited = 0;
+#endif /* VENDOR_EDIT */
 void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 			  struct snd_soc_jack *jack, int status, int mask)
 {
@@ -214,9 +224,13 @@ static int wcd_event_notify(struct notifier_block *self, unsigned long val,
 	bool micbias2 = false;
 	bool micbias1 = false;
 	u8 fsm_en = 0;
-
+	#ifndef VENDOR_EDIT
 	pr_debug("%s: event %s (%d)\n", __func__,
 		 wcd_mbhc_get_event_string(event), event);
+	#else /* VENDOR_EDIT */
+	pr_err("%s: event %s (%d)\n", __func__,
+		wcd_mbhc_get_event_string(event), event);
+	#endif /* VENDOR_EDIT */
 	if (mbhc->mbhc_cb->micbias_enable_status) {
 		micbias2 = mbhc->mbhc_cb->micbias_enable_status(mbhc,
 								MIC_BIAS_2);
@@ -307,8 +321,18 @@ out_micb_en:
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		else
 			/* enable current source and disable mb, pullup*/
+		#ifndef VENDOR_EDIT
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
-
+		#else /* VENDOR_EDIT */
+			{
+				pr_info("%s: current_plug %d\n", __func__, mbhc->current_plug);
+				if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET) {
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+				} else {
+					wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+				}
+			}
+		#endif /* VENDOR_EDIT */
 		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
 			mbhc->mbhc_cb->set_cap_mode(codec, micbias1, false);
@@ -554,9 +578,10 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				enum snd_jack_types jack_type)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
+	#ifndef VENDOR_EDIT
 	bool is_pa_on = false;
 	u8 fsm_en = 0;
-
+	#endif /* VENDOR_EDIT */
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
 	pr_debug("%s: enter insertion %d hph_status %x\n",
@@ -571,10 +596,19 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		if (wcd_cancel_btn_work(mbhc)) {
 			pr_debug("%s: button press is canceled\n", __func__);
 		} else if (mbhc->buttons_pressed) {
+			#ifndef VENDOR_EDIT
 			pr_debug("%s: release of button press%d\n",
 				 __func__, jack_type);
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
 					    mbhc->buttons_pressed);
+			#else /* VENDOR_EDIT */
+			if(mbhc->buttons_pressed & (SND_JACK_BTN_2 | SND_JACK_BTN_3)){
+				pr_err("%s: release of button press%d\n",
+					__func__, jack_type);
+					wcd_mbhc_jack_report(mbhc, &mbhc->button_jack, 0,
+						mbhc->buttons_pressed);
+				}
+			#endif /* VENDOR_EDIT */
 			mbhc->buttons_pressed &=
 				~WCD_MBHC_JACK_BUTTON_MASK;
 		}
@@ -606,6 +640,9 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		hphlocp_off_report(mbhc, SND_JACK_OC_HPHL);
 		mbhc->current_plug = MBHC_PLUG_TYPE_NONE;
 		mbhc->force_linein = false;
+		#ifdef ODM_WT_EDIT
+		headset_notifier_call_chain(0,NULL);
+		#endif
 	} else {
 		/*
 		 * Report removal of current jack type.
@@ -637,8 +674,14 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			}
 			mbhc->hph_type = WCD_MBHC_HPH_NONE;
 			mbhc->zl = mbhc->zr = 0;
+
+			#ifndef VENDOR_EDIT
 			pr_debug("%s: Reporting removal (%x)\n",
 				 __func__, mbhc->hph_status);
+			#else /* VENDOR_EDIT */
+			pr_err("%s: Reporting removal (%x)\n",
+				 __func__, mbhc->hph_status);
+			#endif /* VENDOR_EDIT */
 			wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 					    0, WCD_MBHC_JACK_MASK);
 
@@ -677,7 +720,7 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			mbhc->current_plug = MBHC_PLUG_TYPE_HIGH_HPH;
 		} else if (jack_type == SND_JACK_ANC_HEADPHONE)
 			mbhc->current_plug = MBHC_PLUG_TYPE_ANC_HEADPHONE;
-
+		#ifndef VENDOR_EDIT
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(codec);
 
@@ -716,16 +759,35 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 				__func__);
 			}
 		}
-
+		#endif /* VENDOR_EDIT */
 		mbhc->hph_status |= jack_type;
 
+		#ifndef VENDOR_EDIT
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
+			jack_type, mbhc->hph_status);
+		#else /* VENDOR_EDIT */
+		pr_err("%s: Reporting insertion jack_type=%d(hph_status=%x) [1:headphone 3:headset 4:lineout]\n", __func__,
 			 jack_type, mbhc->hph_status);
+		#endif /* VENDOR_EDIT */
+		#ifndef VENDOR_EDIT
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    (mbhc->hph_status | SND_JACK_MECHANICAL),
 				    WCD_MBHC_JACK_MASK);
+		#else /* VENDOR_EDIT */
+		if (jack_type != SND_JACK_LINEOUT) {
+			wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
+				(mbhc->hph_status | SND_JACK_MECHANICAL),
+					WCD_MBHC_JACK_MASK);
+		}
+		#endif /* VENDOR_EDIT */
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
 	}
+
+	#ifdef ODM_WT_EDIT
+	printk("%s: insertion %d jack_type %x, hph_status %x, RL %d ohm, RR %d ohm\n",
+		 __func__, insertion, jack_type, mbhc->hph_status, mbhc->zl, mbhc->zr);
+	#endif /* ODM_RH_EDIT */
+
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
 }
 EXPORT_SYMBOL(wcd_mbhc_report_plug);
@@ -769,16 +831,34 @@ void wcd_mbhc_elec_hs_report_unplug(struct wcd_mbhc *mbhc)
 }
 EXPORT_SYMBOL(wcd_mbhc_elec_hs_report_unplug);
 
+#ifdef VENDOR_EDIT
+extern void remote_request_dump(void);
+#endif
+
 void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 				   enum wcd_mbhc_plug_type plug_type)
 {
 	bool anc_mic_found = false;
 	enum snd_jack_types jack_type;
 
+	#ifndef VENDOR_EDIT
 	pr_debug("%s: enter current_plug(%d) new_plug(%d)\n",
 		 __func__, mbhc->current_plug, plug_type);
+	#else /* VENDOR_EDIT */
+	pr_err("%s: enter current_plug(%d) new_plug(%d)\n",
+		__func__, mbhc->current_plug, plug_type);
+	#endif /* VENDOR_EDIT */
+
+	#ifdef VENDOR_EDIT
+	remote_request_dump();
+	#endif
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
+	#ifdef VENDOR_EDIT
+	if(plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
+		plug_type = MBHC_PLUG_TYPE_HEADSET;
+	}
+	#endif /* VENDOR_EDIT */
 
 	if (mbhc->current_plug == plug_type) {
 		pr_debug("%s: cable already reported, exit\n", __func__);
@@ -814,7 +894,10 @@ void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 	} else if (plug_type == MBHC_PLUG_TYPE_HIGH_HPH) {
 		if (mbhc->mbhc_cfg->detect_extn_cable) {
 			/* High impedance device found. Report as LINEOUT */
+
+			#ifndef VENDOR_EDIT
 			wcd_mbhc_report_plug(mbhc, 1, SND_JACK_LINEOUT);
+			#endif /* VENDOR_EDIT */
 			pr_debug("%s: setup mic trigger for further detection\n",
 				 __func__);
 
@@ -832,15 +915,24 @@ void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 						 3);
 			wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_INS,
 					     true);
-		} else {
+		}
+		#ifndef VENDOR_EDIT
+		else {
 			wcd_mbhc_report_plug(mbhc, 1, SND_JACK_LINEOUT);
 		}
+		#else /* VENDOR_EDIT */
+		pr_err("%s: current plug_type:LINEOUT\n",__func__);
+		#endif /* VENDOR_EDIT */
 	} else {
 		WARN(1, "Unexpected current plug_type %d, plug_type %d\n",
 		     mbhc->current_plug, plug_type);
 	}
 exit:
+	#ifndef VENDOR_EDIT
 	pr_debug("%s: leave\n", __func__);
+	#else /* VENDOR_EDIT */
+	pr_err("%s: leave\n", __func__);
+	#endif /* VENDOR_EDIT */
 }
 EXPORT_SYMBOL(wcd_mbhc_find_plug_and_report);
 
@@ -851,7 +943,16 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	struct snd_soc_codec *codec = mbhc->codec;
 	enum snd_jack_types jack_type;
 
+	#ifndef VENDOR_EDIT
+	#undef pr_debug
+	#define pr_debug pr_info
+	#endif /* VENDOR_EDIT */
+
+	#ifndef VENDOR_EDIT
 	dev_dbg(codec->dev, "%s: enter\n", __func__);
+	#else /* VENDOR_EDIT */
+	pr_err("%s: enter\n", __func__);
+	#endif /* VENDOR_EDIT */
 	WCD_MBHC_RSC_LOCK(mbhc);
 	mbhc->in_swch_irq_handler = true;
 
@@ -908,6 +1009,12 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			mbhc->mbhc_fn->wcd_mbhc_detect_plug_type(mbhc);
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
+			#ifdef VENDOR_EDIT
+			if (mbhc->mbhc_fn->wcd_cancel_hs_detect_plug)
+				mbhc->mbhc_fn->wcd_cancel_hs_detect_plug(mbhc,
+					&mbhc->correct_plug_swch);
+				WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 0);
+			#endif /* VENDOR_EDIT */
 		/* Disable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(mbhc, false);
@@ -961,6 +1068,11 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 		wcd_mbhc_report_plug(mbhc, 0, jack_type);
 
 	} else if (!detection_type) {
+		#ifdef VENDOR_EDIT
+		if (mbhc->mbhc_fn->wcd_cancel_hs_detect_plug)
+			mbhc->mbhc_fn->wcd_cancel_hs_detect_plug(mbhc,
+				&mbhc->correct_plug_swch);
+		#endif /* VENDOR_EDIT */
 		/* Disable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(mbhc, false);
@@ -979,7 +1091,21 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 {
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
+	#ifdef VENDOR_EDIT
+	#undef pr_debug
+	#define pr_debug pr_info
+	#endif /* VENDOR_EDIT */
 
+	#ifdef VENDOR_EDIT
+	#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+	wake_lock(&headset_detect);
+	#else
+	__pm_stay_awake(headset_detect);
+	#endif
+	#endif /* VENDOR_EDIT */
+	#ifdef VENDOR_EDIT
+	disable_irq_nosync(irq);
+	#endif /* VENDOR_EDIT */
 	pr_debug("%s: enter\n", __func__);
 	if (unlikely((mbhc->mbhc_cb->lock_sleep(mbhc, true)) == false)) {
 		pr_warn("%s: failed to hold suspend\n", __func__);
@@ -989,6 +1115,17 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		wcd_mbhc_swch_irq_handler(mbhc);
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
+	#ifdef VENDOR_EDIT
+	enable_irq(irq);
+	#endif /* VENDOR_EDIT */
+
+	#ifdef VENDOR_EDIT
+	#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+	wake_unlock(&headset_detect);
+	#else
+	__pm_relax(headset_detect);
+	#endif
+	#endif /* VENDOR_EDIT */
 	pr_debug("%s: leave %d\n", __func__, r);
 	return r;
 }
@@ -1032,6 +1169,10 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 	struct delayed_work *dwork;
 	struct wcd_mbhc *mbhc;
 	s16 btn_result = 0;
+	#ifdef VENDOR_EDIT
+	#undef pr_debug
+	#define pr_debug pr_info
+	#endif /* VENDOR_EDIT */
 
 	pr_debug("%s: Enter\n", __func__);
 
@@ -1078,6 +1219,10 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int mask;
 	unsigned long msec_val;
+	#ifdef VENDOR_EDIT
+	#undef pr_debug
+	#define pr_debug pr_info
+	#endif /* VENDOR_EDIT */
 
 	pr_debug("%s: enter\n", __func__);
 	complete(&mbhc->btn_press_compl);
@@ -1118,6 +1263,9 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 		WARN(1, "Button pressed twice without release event\n");
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
+	#ifdef ODM_WT_EDIT
+	printk("%s: button press %x\n", __func__, mbhc->buttons_pressed);
+	#endif /* ODM_RH_EDIT */
 done:
 	pr_debug("%s: leave\n", __func__);
 	WCD_MBHC_RSC_UNLOCK(mbhc);
@@ -1128,6 +1276,10 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 {
 	struct wcd_mbhc *mbhc = data;
 	int ret;
+	#ifdef VENDOR_EDIT
+	#undef pr_debug
+	#define pr_debug pr_info
+	#endif /* VENDOR_EDIT */
 
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1153,6 +1305,9 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	if (mbhc->mbhc_detection_logic == WCD_DETECTION_LEGACY &&
 		mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
 		wcd_mbhc_find_plug_and_report(mbhc, MBHC_PLUG_TYPE_HEADSET);
+		#ifdef VENDOR_EDIT
+		wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
+		#endif /* VENDOR_EDIT */
 		goto exit;
 
 	}
@@ -1181,6 +1336,10 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 						0, mbhc->buttons_pressed);
 			}
 		}
+		#ifdef ODM_WT_EDIT
+		printk("%s: %s button press %x\n", __func__,
+				((ret == 0) ? "long":""), mbhc->buttons_pressed);
+		#endif /* ODM_RH_EDIT */
 		mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
 	}
 exit:
@@ -1313,7 +1472,11 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 4);
 	} else {
 		/* Insertion debounce set to 96ms */
+		#ifndef VENDOR_EDIT
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);
+		#else /* VENDOR_EDIT */
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 11);
+		#endif /* VENDOR_EDIT */
 	}
 
 	/* Button Debounce set to 16ms */
@@ -1330,6 +1493,9 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 
 	/* program HS_VREF value */
 	wcd_program_hs_vref(mbhc);
+	#ifdef VENDOR_EDIT
+	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_VREF, 3);//John.Xu 2015-08-04 changed from 0x02 to 0x03
+	#endif /* VENDOR_EDIT */
 
 	wcd_program_btn_threshold(mbhc, false);
 
@@ -1337,6 +1503,16 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	reinit_completion(&mbhc->btn_press_compl);
 
 	WCD_MBHC_RSC_UNLOCK(mbhc);
+	#ifdef VENDOR_EDIT
+	if(!headset_detect_inited) {
+		headset_detect_inited = 1;
+		#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+		wake_lock_init(&headset_detect, WAKE_LOCK_SUSPEND,	"headset_detect");
+		#else
+		headset_detect = wakeup_source_register("headset_detect");
+		#endif
+	}
+	#endif /* VENDOR_EDIT */
 	pr_debug("%s: leave\n", __func__);
 	return ret;
 }
