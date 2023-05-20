@@ -29019,10 +29019,17 @@ WDI_ProcessReceiveFilterSetFilterReq
            return WDI_STATUS_E_FAILURE;
         }
 
+        #ifndef VENDOR_EDIT
+        //Modify for: reduce kernel log
         WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
                    "UsData Off %d UsSend %d cfg %pK",usDataOffset,
                    usSendSize,pSessRcvPktFilterCfg);
-       
+        #else /* VENDOR_EDIT */
+        WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
+                   "UsData Off %d UsSend %d cfg %pK",usDataOffset,
+                   usSendSize,pSessRcvPktFilterCfg);
+        #endif /* VENDOR_EDIT */
+
         pSessRcvPktFilterCfg->filterId = pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.filterId;
         pSessRcvPktFilterCfg->filterType = pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.filterType;
         pSessRcvPktFilterCfg->numParams = pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.numFieldParams;
@@ -29030,13 +29037,23 @@ WDI_ProcessReceiveFilterSetFilterReq
 
         pSessRcvPktFilterCfg->bssIdx = pBSSSes->ucBSSIdx;
 
+        #ifndef VENDOR_EDIT
+        //Modify for: reduce kernel log
         WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
                    "Out: FID %d FT %d",pSessRcvPktFilterCfg->filterId,
                    pSessRcvPktFilterCfg->filterType);
         WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+                   "NParams %d CT %d",pSessRcvPktFilterCfg->numParams,
+                   pSessRcvPktFilterCfg->coleasceTime);
+        #else /* VENDOR_EDIT */
+        WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
+                   "Out: FID %d FT %d",pSessRcvPktFilterCfg->filterId,
+                   pSessRcvPktFilterCfg->filterType);
+        WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
                    "NParams %d CT %d",pSessRcvPktFilterCfg->numParams, 
                    pSessRcvPktFilterCfg->coleasceTime);
-       
+        #endif /* VENDOR_EDIT */
+
         for ( i = 0; i < pSessRcvPktFilterCfg->numParams; i++ )
         {
             pSessRcvPktFilterCfg->paramsData[i].protocolLayer =
@@ -29045,27 +29062,28 @@ WDI_ProcessReceiveFilterSetFilterReq
                 pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].cmpFlag;
             pSessRcvPktFilterCfg->paramsData[i].dataOffset =
                 pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].dataOffset;
-             pSessRcvPktFilterCfg->paramsData[i].dataLength =
-                 pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].dataLength;
-       
+            pSessRcvPktFilterCfg->paramsData[i].dataLength =
+                pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].dataLength;
+
             wpalMemoryCopy(&pSessRcvPktFilterCfg->paramsData[i].compareData,
                          &pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].compareData,
                          8);
             wpalMemoryCopy(&pSessRcvPktFilterCfg->paramsData[i].dataMask,
                          &pwdiSetRcvPktFilterReqInfo->wdiPktFilterCfg.paramsData[i].dataMask,
                          8);
-       
-           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+
+           #ifdef VENDOR_EDIT
+           //Modify for: reduce kernel log, changed level from error to info low
+           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
                 "Out:Proto %d Comp Flag %d",
                 pSessRcvPktFilterCfg->paramsData[i].protocolLayer,
                 pSessRcvPktFilterCfg->paramsData[i].cmpFlag);
 
-           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
                 "Data Offset %d Data Len %d",
                 pSessRcvPktFilterCfg->paramsData[i].dataOffset,
                 pSessRcvPktFilterCfg->paramsData[i].dataLength);
-       
-           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
                 "CData: %d:%d:%d:%d:%d:%d",
                 pSessRcvPktFilterCfg->paramsData[i].compareData[0],
                 pSessRcvPktFilterCfg->paramsData[i].compareData[1],
@@ -29073,8 +29091,7 @@ WDI_ProcessReceiveFilterSetFilterReq
                 pSessRcvPktFilterCfg->paramsData[i].compareData[3],
                 pSessRcvPktFilterCfg->paramsData[i].compareData[4],
                 pSessRcvPktFilterCfg->paramsData[i].compareData[5]);
-       
-           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_ERROR,
+           WPAL_TRACE(eWLAN_MODULE_DAL_CTRL, eWLAN_PAL_TRACE_LEVEL_INFO_LOW,
                 "MData: %d:%d:%d:%d:%d:%d",
                 pSessRcvPktFilterCfg->paramsData[i].dataMask[0],
                 pSessRcvPktFilterCfg->paramsData[i].dataMask[1],
@@ -29082,13 +29099,12 @@ WDI_ProcessReceiveFilterSetFilterReq
                 pSessRcvPktFilterCfg->paramsData[i].dataMask[3],
                 pSessRcvPktFilterCfg->paramsData[i].dataMask[4],
                 pSessRcvPktFilterCfg->paramsData[i].dataMask[5]);
+           #endif /* VENDOR_EDIT */
         }
-       
+
         wpalMemoryCopy( pSendBuffer+usDataOffset,
                         pSessRcvPktFilterCfg,
                         usSessRcvPktFilterCfgSize);
-       
-       
         pWDICtx->wdiReqStatusCB     = pwdiSetRcvPktFilterReqInfo->wdiReqStatusCB;
         pWDICtx->pReqStatusUserData = pwdiSetRcvPktFilterReqInfo->pUserData;
 

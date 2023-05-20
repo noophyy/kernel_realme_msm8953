@@ -725,6 +725,10 @@ typedef struct
    wpt_boolean                     hostInitiatedH2H;
 #ifdef WLAN_DXE_LOW_RESOURCE_TIMER
    wpt_timer                       rxResourceAvailableTimer;
+#ifdef VENDOR_EDIT
+//Add for low memory shrink
+    wpt_timer                       rxShrinkLowMemo;
+#endif /* VENDOR_EDIT */
 #endif
    wpt_timer                       dxeSSRTimer;
 } WLANDXE_CtrlBlkType;

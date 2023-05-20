@@ -2995,6 +2995,30 @@ int iw_softap_modify_acl(struct net_device *dev,
     return ret;
 }
 
+#ifdef VENDOR_EDIT
+//Add for: hotspot manager
+int oppo_wlan_hdd_modify_acl(struct net_device *dev, char *extra)
+{
+	int ret;
+
+	vos_ssr_protect(__func__);
+	ret = __iw_softap_modify_acl(dev, NULL, NULL, extra);
+	vos_ssr_unprotect(__func__);
+
+	return ret;
+}
+
+int oppo_wlan_hdd_set_max_assoc(struct net_device *dev, char* extra)
+{
+	int ret;
+
+	vos_ssr_protect(__func__);
+	ret = __iw_softap_setparam(dev, NULL, NULL, extra);
+	vos_ssr_unprotect(__func__);
+
+	return ret;
+}
+#endif /* VENDOR_EDIT */
 int
 static __iw_softap_getchannel(struct net_device *dev,
                               struct iw_request_info *info,

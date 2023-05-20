@@ -146,4 +146,10 @@ void hdd_check_for_unsafe_ch(hdd_adapter_t *phostapd_adapter,
 void hdd_force_scc_restart_sap(hdd_adapter_t *adapter,
     hdd_context_t *hdd_ctx, tANI_U8  channelId);
 
+#ifdef VENDOR_EDIT
+//Add for: hotspot manager
+int oppo_wlan_hdd_modify_acl(struct net_device *dev, char* extra);
+int oppo_wlan_hdd_set_max_assoc(struct net_device *dev, char* extra);
+#endif /* VENDOR_EDIT */
+
 #endif    // end #if !defined( WLAN_HDD_HOSTAPD_H )

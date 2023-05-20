@@ -61,6 +61,12 @@ when           who        what, where, why
 /*----------------------------------------------------------------------------
  * Include Files
  * -------------------------------------------------------------------------*/
+#ifdef VENDOR_EDIT
+//Add for low memory shrink
+#include <linux/mm.h>
+#include <linux/mmzone.h>
+#include <linux/swap.h>
+#endif /* VENDOR_EDIT */
 #include "wlan_qct_dxe.h"
 #include "wlan_qct_dxe_i.h"
 #include "wlan_qct_pal_device.h"
@@ -1707,6 +1713,11 @@ void dxeRXResourceAvailableTimerExpHandler
                   __func__);
          wpalTimerStart(&dxeCtxt->rxResourceAvailableTimer,
                         wpalGetDxeReplenishRXTimerVal());
+#ifdef VENDOR_EDIT
+         //Add for low memory shrink
+         wpalTimerStart(&dxeCtxt->rxShrinkLowMemo,
+                        wpalGetDxeReplenishRXTimerVal()/2);
+#endif /* VENDOR_EDIT */
          return;
       }
    }
@@ -1724,10 +1735,81 @@ void dxeRXResourceAvailableTimerExpHandler
    {
        wpalTimerStart(&dxeCtxt->rxResourceAvailableTimer,
                       wpalGetDxeReplenishRXTimerVal());
+#ifdef VENDOR_EDIT
+       //Add for low memory shrink
+       wpalTimerStart(&dxeCtxt->rxShrinkLowMemo,
+                      wpalGetDxeReplenishRXTimerVal()/2);
+#endif /* VENDOR_EDIT */
    }
    return;
 }
-#endif
+
+#ifdef VENDOR_EDIT
+//Add for low memory shrink
+static int buddyinfo_show(void)
+{
+	int i, j;
+	struct pglist_data *node_0;
+	struct zone* pzone;
+	node_0 = NODE_DATA(0);
+	if (node_0 == NULL)
+		return 0;
+	for (i = 0; i < MAX_NR_ZONES; ++i) {
+		pzone = &node_0->node_zones[i];
+		if (pzone == NULL)
+			continue;
+		printk("Node 0 Zone %s: \n", pzone->name);
+		if (pzone->free_area == NULL)
+			continue;
+		for (j = 0; j < MAX_ORDER; j++) {
+			printk("order: %d %5lu\n", j, pzone->free_area[j].nr_free);
+		}
+		printk("\n");
+	}
+	return 0;
+}
+
+static void shrink_all_work_func(void)
+{
+   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
+            "RX Low resource, shrink_all_work_func");
+	printk("shrink_all_memory: \n" \
+		"   Free CMA is %ldkB\n" \
+		"   Total free pages is %ldkB\n" \
+		"   Total file cache is %ldkB\n",
+		global_page_state(NR_FREE_CMA_PAGES) *
+		(long)(PAGE_SIZE / 1024),
+		global_page_state(NR_FREE_PAGES) * (long)(PAGE_SIZE / 1024),
+		global_page_state(NR_FILE_PAGES) * (long)(PAGE_SIZE / 1024));
+
+	buddyinfo_show();
+	shrink_all_memory(1000);
+
+	printk("after shrink_all_memory: \n" \
+		"   Free CMA is %ldkB\n" \
+		"   Total free pages is %ldkB\n" \
+		"   Total file cache is %ldkB\n",
+		global_page_state(NR_FREE_CMA_PAGES) *
+		(long)(PAGE_SIZE / 1024),
+		global_page_state(NR_FREE_PAGES) * (long)(PAGE_SIZE / 1024),
+		global_page_state(NR_FILE_PAGES) * (long)(PAGE_SIZE / 1024));
+
+	buddyinfo_show();
+}
+
+
+void dxeShrinkLowMemoExpHandler
+(
+   void    *usrData
+)
+{
+   HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
+            "RX Low resource, call shrink_all_memory(1000) ");
+   shrink_all_work_func();
+}
+#endif /* VENDOR_EDIT */
+
+#endif /* WLAN_DXE_LOW_RESOURCE_TIMER */
 
 /*==========================================================================
   @  Function Name
@@ -1966,13 +2048,23 @@ static wpt_status dxeRXFrameSingleBufferAlloc
                 HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_FATAL,
                          "RX resource available timer not started");
             }
+#ifndef VENDOR_EDIT
+            //Modify for low memory shrink
+            /*
             else
                dxeEnvBlk.rx_low_resource_timer = 1;
+            */
+#else /* VENDOR_EDIT */
+            else {
+                wpalTimerStart(&dxeCtxt->rxShrinkLowMemo,
+                            wpalGetDxeReplenishRXTimerVal()/2);
+                dxeEnvBlk.rx_low_resource_timer = 1;
+            }
+#endif /* VENDOR_EDIT */
          }
 #endif
       }
    }
-   
    if(NULL == currentPalPacketBuffer)
    {
       return eWLAN_PAL_STATUS_E_RESOURCES;
@@ -3111,6 +3203,10 @@ void dxeRXPacketAvailableEventHandler
       wpalTimerGetCurStatus(&dxeCtxt->rxResourceAvailableTimer))
    {
       wpalTimerStop(&dxeCtxt->rxResourceAvailableTimer);
+#ifdef VENDOR_EDIT
+      //Add for low memory shrink
+      wpalTimerStop(&dxeCtxt->rxShrinkLowMemo);
+#endif /* VENDOR_EDIT */
       dxeEnvBlk.rx_low_resource_timer = 0;
    }
 #endif
@@ -3122,14 +3218,14 @@ void dxeRXPacketAvailableEventHandler
 
       channelCb = &dxeCtxt->dxeChannel[WDTS_CHANNEL_RX_HIGH_PRI];
       status = dxeRXFrameRefillRing(dxeCtxt,channelCb);
-   
+
       // Wait for another callback to indicate when Rx resources are available
       // again.
       if(eWLAN_PAL_STATUS_SUCCESS != status)
       {
          break;
       }
-   
+
       channelCb = &dxeCtxt->dxeChannel[WDTS_CHANNEL_RX_LOW_PRI];
       status = dxeRXFrameRefillRing(dxeCtxt,channelCb);
       if(eWLAN_PAL_STATUS_SUCCESS != status)
@@ -4838,6 +4934,12 @@ void *WLANDXE_Open
    wpalTimerInit(&tempDxeCtrlBlk->rxResourceAvailableTimer,
                  dxeRXResourceAvailableTimerExpHandler,
                  tempDxeCtrlBlk);
+#ifdef VENDOR_EDIT
+   //Add for low memory shrink
+   wpalTimerInit(&tempDxeCtrlBlk->rxShrinkLowMemo,
+                 dxeShrinkLowMemoExpHandler,
+                 tempDxeCtrlBlk);
+#endif /* VENDOR_EDIT */
 #endif
 
    wpalTimerInit(&tempDxeCtrlBlk->dxeSSRTimer,
@@ -5326,6 +5428,10 @@ wpt_status WLANDXE_Stop
       wpalTimerGetCurStatus(&dxeCtxt->rxResourceAvailableTimer))
    {
       wpalTimerStop(&dxeCtxt->rxResourceAvailableTimer);
+#ifdef VENDOR_EDIT
+      //Add for low memory shrink
+      wpalTimerStop(&dxeCtxt->rxShrinkLowMemo);
+#endif /* VENDOR_EDIT */
    }
 #endif
 
@@ -5368,12 +5474,16 @@ wpt_status WLANDXE_Close
    {
       HDXE_MSG(eWLAN_MODULE_DAL_DATA, eWLAN_PAL_TRACE_LEVEL_ERROR,
                "WLANDXE_Stop Invalid DXE CB");
-      return eWLAN_PAL_STATUS_E_INVAL;   
+      return eWLAN_PAL_STATUS_E_INVAL;
    }
 
    dxeCtxt = (WLANDXE_CtrlBlkType *)pDXEContext;
 #ifdef WLAN_DXE_LOW_RESOURCE_TIMER
    wpalTimerDelete(&dxeCtxt->rxResourceAvailableTimer);
+#ifdef VENDOR_EDIT
+   //Add for low memory shrink
+   wpalTimerDelete(&dxeCtxt->rxShrinkLowMemo);
+#endif /* VENDOR_EDIT */
 #endif
    wpalTimerDelete(&dxeCtxt->dxeSSRTimer);
    foreach_valid_channel(idx)

@@ -233,6 +233,14 @@ enum qca_nl80211_vendor_subcmds {
     QCA_NL80211_VENDOR_SUBCMD_NUD_STATS_SET = 149,
     /* Get the NUD stats, represented by the enum qca_attr_nud_stats_get */
     QCA_NL80211_VENDOR_SUBCMD_NUD_STATS_GET = 150,
+
+#ifdef VENDOR_EDIT
+	//add for: hotspot manager via wificond
+	//do not assign value to avoid conflict with qcom new-added commands
+	OPPO_NL80211_VENDOR_SUBCMD_MODIFY_ACL,
+	OPPO_NL80211_VENDOR_SUBCMD_SET_MAX_ASSOC,
+#endif /* VENDOR_EDIT */
+
     /*
      * Event indicating to the user space that the driver has detected an
      * internal failure. This event carries the information indicating the
@@ -241,6 +249,21 @@ enum qca_nl80211_vendor_subcmds {
      */
     QCA_NL80211_VENDOR_SUBCMD_HANG = 157,
 };
+
+#ifdef VENDOR_EDIT
+//add for: OPPO specific attr
+enum oppo_vendor_attr {
+	OPPO_WLAN_VENDOR_ATTR_UNSPECIFIC = 0, /* cannot be use due to nla_parse() */
+	OPPO_WLAN_VENDOR_ATTR_MAC_ADDR,
+	OPPO_WLAN_VENDOR_ATTR_WETHER_BLOCK_CLIENT,
+	OPPO_WLAN_VENDOR_ATTR_SAP_MAX_CLIENT_NUM,
+
+	/* add attr above */
+	OPPO_WLAN_VENDOR_ATTR_LAST,
+	OPPO_WLAN_VENDOR_ATTR_MAX =
+		OPPO_WLAN_VENDOR_ATTR_LAST - 1,
+};
+#endif /* VENDOR_EDIT */
 
 enum qca_wlan_vendor_hang_reason {
 	/* Unspecified reason */

@@ -756,7 +756,12 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
               wpalPacketFree(pFrame);
           } else {
               //Recovery may cause adjoining buffer corruption
+              #ifndef VENDOR_EDIT
+              //Remove for feedbackPC is at WDTS_RxPacket+0x128.we should close bug_on after MP
+              /*
               WPAL_BUG(0);
+              */
+              #endif /* VENDOR_EDIT */
           }
 
           return eWLAN_PAL_STATUS_SUCCESS;
@@ -834,7 +839,12 @@ wpt_status WDTS_RxPacket (void *pContext, wpt_packet *pFrame, WDTS_ChannelType c
               wpalPacketFree(pFrame);
           } else {
               //Recovery may cause adjoining buffer corruption
+              #ifndef VENDOR_EDIT
+              //Remove for feedbackPC is at WDTS_RxPacket+0x128.we should close bug_on after MP
+              /*
               WPAL_BUG(0);
+              */
+              #endif /* VENDOR_EDIT */
           }
 
           return eWLAN_PAL_STATUS_SUCCESS;

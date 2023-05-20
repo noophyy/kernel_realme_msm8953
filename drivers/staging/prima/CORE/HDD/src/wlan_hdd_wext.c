@@ -9076,8 +9076,14 @@ int wlan_hdd_set_filter(hdd_adapter_t *pAdapter, tpPacketFilterCfg pRequest)
         return -EBUSY;
     }
     /* Debug display of request components. */
+    #ifndef VENDOR_EDIT
+    //Modify for: reduce kernel log
     hddLog(VOS_TRACE_LEVEL_ERROR, "%s: Packet Filter Request : FA %d params %d",
             __func__, pRequest->filterAction, pRequest->numParams);
+    #else /* VENDOR_EDIT */
+    hddLog(VOS_TRACE_LEVEL_DEBUG, "%s: Packet Filter Request : FA %d params %d",
+            __func__, pRequest->filterAction, pRequest->numParams);
+    #endif /* VENDOR_EDIT */
 
     switch (pRequest->filterAction)
     {
