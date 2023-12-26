@@ -63,7 +63,7 @@ static struct asmp_param_struct {
     unsigned int cycle_up;
     unsigned int cycle_down;
 } asmp_param = {
-    .delay = 100,
+    .delay = 1, // looks like .delay parameter 100 is work efficient for old device, change it to 1 ms
     .scroff_single_core = true,
     .max_cpus_bc = 4, /* Max cpu Big cluster ! */
     .max_cpus_lc = 4, /* Max cpu Little cluster ! */
