@@ -37,14 +37,6 @@ DEFCONFIG="mikasa_defconfig"
 export KBUILD_BUILD_USER=Nop
 export KBUILD_BUILD_HOST=Notedphy
 
-# change TC_DIR(directory) on where you clone proton-clang toolchain
-
-TC_DIR="/workspace/gitpod/proton-clang"
-
-# do not modify export PATCH it's been including with TC_DIR
-
-export PATH="$TC_DIR/bin:$PATH"
-
 mkdir -p out
 make O=out ARCH=arm64 $DEFCONFIG
 
