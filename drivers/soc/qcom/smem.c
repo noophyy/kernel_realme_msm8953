@@ -305,10 +305,17 @@ static int qcom_smem_alloc_private(struct qcom_smem *smem,
 	size_t alloc_size;
 	void *cached;
 	void *p_end;
+<<<<<<< HEAD
 
 	phdr = ptable_entry_to_phdr(entry);
 	p_end = (void *)phdr + le32_to_cpu(entry->size);
 	
+=======
+
+	phdr = ptable_entry_to_phdr(entry);
+	p_end = (void *)phdr + le32_to_cpu(entry->size);
+
+>>>>>>> 1db11db9930698d3add5cc9fbd9abe57cc0a4bda
 	hdr = phdr_to_first_private_entry(phdr);
 	end = phdr_to_last_private_entry(phdr);
 	cached = phdr_to_first_cached_entry(phdr);
@@ -316,7 +323,10 @@ static int qcom_smem_alloc_private(struct qcom_smem *smem,
 	if (WARN_ON((void *)end > p_end || (void *)cached > p_end))
 		return -EINVAL;
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 1db11db9930698d3add5cc9fbd9abe57cc0a4bda
 	while (hdr < end) {
 		if (hdr->canary != SMEM_PRIVATE_CANARY) {
 			dev_err(smem->dev,
@@ -429,7 +439,11 @@ int qcom_smem_alloc(unsigned host, unsigned item, size_t size)
 	} else {
 		ret = qcom_smem_alloc_global(__smem, item, size);
 	}
+<<<<<<< HEAD
 	
+=======
+
+>>>>>>> 1db11db9930698d3add5cc9fbd9abe57cc0a4bda
 	hwspin_unlock_irqrestore(__smem->hwlock, &flags);
 
 	return ret;
