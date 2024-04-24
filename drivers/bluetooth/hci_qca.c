@@ -718,7 +718,7 @@ static int qca_enqueue(struct hci_uart *hu, struct sk_buff *skb)
 	default:
 		BT_ERR("Illegal tx state: %d (losing packet)",
 		       qca->tx_ibs_state);
-		kfree_skb(skb);
+		dev_kfree_skb_irq(skb);
 		break;
 	}
 
@@ -884,7 +884,7 @@ static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
 	 */
 	set_current_state(TASK_UNINTERRUPTIBLE);
 	schedule_timeout(msecs_to_jiffies(BAUDRATE_SETTLE_TIMEOUT_MS));
-	set_current_state(TASK_INTERRUPTIBLE);
+	set_current_state(TASK_RUNNING);
 
 	return 0;
 }

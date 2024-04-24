@@ -299,6 +299,7 @@ ip6t_do_table(struct sk_buff *skb,
 	 * things we don't know, ie. tcp syn flag or ports).  If the
 	 * rule is also a fragment-specific rule, non-fragments won't
 	 * match it. */
+	acpar.fragoff = 0;
 	acpar.hotdrop = false;
 	acpar.net     = state->net;
 	acpar.in      = state->in;
@@ -1485,6 +1486,8 @@ translate_compat_table(struct net *net,
 	if (!newinfo)
 		goto out_unlock;
 
+	memset(newinfo->entries, 0, size);
+
 	newinfo->number = compatr->num_entries;
 	for (i = 0; i < NF_INET_NUMHOOKS; i++) {
 		newinfo->hook_entry[i] = compatr->hook_entry[i];
@@ -1943,6 +1946,7 @@ static struct xt_match ip6t_builtin_mt[] __read_mostly = {
 		.checkentry = icmp6_checkentry,
 		.proto      = IPPROTO_ICMPV6,
 		.family     = NFPROTO_IPV6,
+		.me	    = THIS_MODULE,
 	},
 };
 

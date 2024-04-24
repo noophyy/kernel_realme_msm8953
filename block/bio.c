@@ -155,7 +155,7 @@ out:
 
 unsigned int bvec_nr_vecs(unsigned short idx)
 {
-	return bvec_slabs[idx].nr_vecs;
+	return bvec_slabs[--idx].nr_vecs;
 }
 
 void bvec_free(mempool_t *pool, struct bio_vec *bv, unsigned int idx)
@@ -1230,8 +1230,11 @@ struct bio *bio_copy_user_iov(struct request_queue *q,
 			}
 		}
 
-		if (bio_add_pc_page(q, bio, page, bytes, offset) < bytes)
+		if (bio_add_pc_page(q, bio, page, bytes, offset) < bytes) {
+			if (!map_data)
+				__free_page(page);
 			break;
+		}
 
 		len -= bytes;
 		offset = 0;
@@ -1551,7 +1554,7 @@ struct bio *bio_copy_kern(struct request_queue *q, void *data, unsigned int len,
 		if (bytes > len)
 			bytes = len;
 
-		page = alloc_page(q->bounce_gfp | gfp_mask);
+		page = alloc_page(q->bounce_gfp | __GFP_ZERO | gfp_mask);
 		if (!page)
 			goto cleanup;
 

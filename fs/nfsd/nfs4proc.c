@@ -982,8 +982,9 @@ nfsd4_write(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	unsigned long cnt;
 	int nvecs;
 
-	if (write->wr_offset >= OFFSET_MAX)
-		return nfserr_inval;
+	if (write->wr_offset > (u64)OFFSET_MAX ||
+	    write->wr_offset + write->wr_buflen > (u64)OFFSET_MAX)
+		return nfserr_fbig;
 
 	status = nfs4_preprocess_stateid_op(rqstp, cstate, &cstate->current_fh,
 						stateid, WR_STATE, &filp, NULL);
@@ -1015,6 +1016,9 @@ nfsd4_verify_copy(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		  stateid_t *dst_stateid, struct file **dst)
 {
 	__be32 status;
+
+	if (!cstate->save_fh.fh_dentry)
+		return nfserr_nofilehandle;
 
 	status = nfs4_preprocess_stateid_op(rqstp, cstate, &cstate->save_fh,
 					    src_stateid, RD_STATE, src, NULL);
@@ -1725,6 +1729,7 @@ nfsd4_proc_compound(struct svc_rqst *rqstp,
 	if (status) {
 		op = &args->ops[0];
 		op->status = status;
+		resp->opcnt = 1;
 		goto encode_op;
 	}
 

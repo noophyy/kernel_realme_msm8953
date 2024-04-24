@@ -113,7 +113,8 @@ static inline struct inet_request_sock *inet_rsk(const struct request_sock *sk)
 
 static inline u32 inet_request_mark(const struct sock *sk, struct sk_buff *skb)
 {
-	if (!sk->sk_mark && sock_net(sk)->ipv4.sysctl_tcp_fwmark_accept)
+	if (!sk->sk_mark &&
+	    READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_fwmark_accept))
 		return skb->mark;
 
 	return sk->sk_mark;
@@ -130,12 +131,6 @@ static inline int inet_request_bound_dev_if(const struct sock *sk,
 #endif
 
 	return sk->sk_bound_dev_if;
-}
-
-static inline struct ip_options_rcu *ireq_opt_deref(const struct inet_request_sock *ireq)
-{
-	return rcu_dereference_check(ireq->ireq_opt,
-				     atomic_read(&ireq->req.rsk_refcnt) > 0);
 }
 
 struct inet_cork {

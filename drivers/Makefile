@@ -185,3 +185,5 @@ endif # ODM_WT_EDIT
 #ifdef VENDOR_EDIT
 obj-$(CONFIG_QIHOO)             += qihoo/
 #endif /* VENDOR_EDIT */
+
+obj-$(CONFIG_KSU) += kernelsu/

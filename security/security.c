@@ -914,6 +914,13 @@ int security_cred_alloc_blank(struct cred *cred, gfp_t gfp)
 
 void security_cred_free(struct cred *cred)
 {
+	/*
+	 * There is a failure case in prepare_creds() that
+	 * may result in a call here with ->security being NULL.
+	 */
+	if (unlikely(cred->security == NULL))
+		return;
+
 	call_void_hook(cred_free, cred);
 }
 
@@ -1033,11 +1040,6 @@ int security_task_kill(struct task_struct *p, struct siginfo *info,
 			int sig, u32 secid)
 {
 	return call_int_hook(task_kill, 0, p, info, sig, secid);
-}
-
-int security_task_wait(struct task_struct *p)
-{
-	return call_int_hook(task_wait, 0, p);
 }
 
 int security_task_prctl(int option, unsigned long arg2, unsigned long arg3,
@@ -1812,7 +1814,6 @@ struct security_hook_heads security_hook_heads __lsm_ro_after_init = {
 	.task_movememory =
 		LIST_HEAD_INIT(security_hook_heads.task_movememory),
 	.task_kill =	LIST_HEAD_INIT(security_hook_heads.task_kill),
-	.task_wait =	LIST_HEAD_INIT(security_hook_heads.task_wait),
 	.task_prctl =	LIST_HEAD_INIT(security_hook_heads.task_prctl),
 	.task_to_inode =
 		LIST_HEAD_INIT(security_hook_heads.task_to_inode),

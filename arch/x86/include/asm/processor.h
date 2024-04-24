@@ -173,6 +173,11 @@ extern const struct seq_operations cpuinfo_op;
 
 extern void cpu_detect(struct cpuinfo_x86 *c);
 
+static inline unsigned long l1tf_pfn_limit(void)
+{
+	return BIT(boot_cpu_data.x86_phys_bits - 1 - PAGE_SHIFT) - 1;
+}
+
 extern void early_cpu_init(void);
 extern void identify_boot_cpu(void);
 extern void identify_secondary_cpu(struct cpuinfo_x86 *);
@@ -205,6 +210,24 @@ static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
 	    : "0" (*eax), "2" (*ecx)
 	    : "memory");
 }
+
+#define native_cpuid_reg(reg)					\
+static inline unsigned int native_cpuid_##reg(unsigned int op)	\
+{								\
+	unsigned int eax = op, ebx, ecx = 0, edx;		\
+								\
+	native_cpuid(&eax, &ebx, &ecx, &edx);			\
+								\
+	return reg;						\
+}
+
+/*
+ * Native CPUID functions returning a single datum.
+ */
+native_cpuid_reg(eax)
+native_cpuid_reg(ebx)
+native_cpuid_reg(ecx)
+native_cpuid_reg(edx)
 
 static inline void load_cr3(pgd_t *pgdir)
 {
@@ -435,15 +458,6 @@ struct thread_struct {
 	 * the end.
 	 */
 };
-
-/*
- * Thread-synchronous status.
- *
- * This is different from the flags in that nobody else
- * ever touches our thread-synchronous status, so we don't
- * have to worry about atomic accesses.
- */
-#define TS_COMPAT		0x0002	/* 32bit syscall active (64BIT)*/
 
 /*
  * Set IOPL bits in EFLAGS from given mask

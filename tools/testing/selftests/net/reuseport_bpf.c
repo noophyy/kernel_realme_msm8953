@@ -330,7 +330,7 @@ static void test_extra_filter(const struct test_params p)
 	if (bind(fd1, addr, sockaddr_size()))
 		error(1, errno, "failed to bind recv socket 1");
 
-	if (!bind(fd2, addr, sockaddr_size()) && errno != EADDRINUSE)
+	if (!bind(fd2, addr, sockaddr_size()) || errno != EADDRINUSE)
 		error(1, errno, "bind socket 2 should fail with EADDRINUSE");
 
 	free(addr);
@@ -437,14 +437,19 @@ void enable_fastopen(void)
 	}
 }
 
-static struct rlimit rlim_old, rlim_new;
+static struct rlimit rlim_old;
 
 static  __attribute__((constructor)) void main_ctor(void)
 {
 	getrlimit(RLIMIT_MEMLOCK, &rlim_old);
-	rlim_new.rlim_cur = rlim_old.rlim_cur + (1UL << 20);
-	rlim_new.rlim_max = rlim_old.rlim_max + (1UL << 20);
-	setrlimit(RLIMIT_MEMLOCK, &rlim_new);
+
+	if (rlim_old.rlim_cur != RLIM_INFINITY) {
+		struct rlimit rlim_new;
+
+		rlim_new.rlim_cur = rlim_old.rlim_cur + (1UL << 20);
+		rlim_new.rlim_max = rlim_old.rlim_max + (1UL << 20);
+		setrlimit(RLIMIT_MEMLOCK, &rlim_new);
+	}
 }
 
 static __attribute__((destructor)) void main_dtor(void)

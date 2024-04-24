@@ -1425,18 +1425,19 @@ static void dwc2_hc_start_transfer(struct dwc2_hsotg *hsotg,
 			if (num_packets > max_hc_pkt_count) {
 				num_packets = max_hc_pkt_count;
 				chan->xfer_len = num_packets * chan->max_packet;
+			} else if (chan->ep_is_in) {
+				/*
+				 * Always program an integral # of max packets
+				 * for IN transfers.
+				 * Note: This assumes that the input buffer is
+				 * aligned and sized accordingly.
+				 */
+				chan->xfer_len = num_packets * chan->max_packet;
 			}
 		} else {
 			/* Need 1 packet for transfer length of 0 */
 			num_packets = 1;
 		}
-
-		if (chan->ep_is_in)
-			/*
-			 * Always program an integral # of max packets for IN
-			 * transfers
-			 */
-			chan->xfer_len = num_packets * chan->max_packet;
 
 		if (chan->ep_type == USB_ENDPOINT_XFER_INT ||
 		    chan->ep_type == USB_ENDPOINT_XFER_ISOC)
@@ -2544,34 +2545,31 @@ static void dwc2_hc_init_xfer(struct dwc2_hsotg *hsotg,
 
 #define DWC2_USB_DMA_ALIGN 4
 
-struct dma_aligned_buffer {
-	void *kmalloc_ptr;
-	void *old_xfer_buffer;
-	u8 data[0];
-};
-
 static void dwc2_free_dma_aligned_buffer(struct urb *urb)
 {
-	struct dma_aligned_buffer *temp;
+	void *stored_xfer_buffer;
 
 	if (!(urb->transfer_flags & URB_ALIGNED_TEMP_BUFFER))
 		return;
 
-	temp = container_of(urb->transfer_buffer,
-		struct dma_aligned_buffer, data);
+	/* Restore urb->transfer_buffer from the end of the allocated area */
+	memcpy(&stored_xfer_buffer,
+	       PTR_ALIGN(urb->transfer_buffer + urb->transfer_buffer_length,
+			 dma_get_cache_alignment()),
+	       sizeof(urb->transfer_buffer));
 
 	if (usb_urb_dir_in(urb))
-		memcpy(temp->old_xfer_buffer, temp->data,
+		memcpy(stored_xfer_buffer, urb->transfer_buffer,
 		       urb->transfer_buffer_length);
-	urb->transfer_buffer = temp->old_xfer_buffer;
-	kfree(temp->kmalloc_ptr);
+	kfree(urb->transfer_buffer);
+	urb->transfer_buffer = stored_xfer_buffer;
 
 	urb->transfer_flags &= ~URB_ALIGNED_TEMP_BUFFER;
 }
 
 static int dwc2_alloc_dma_aligned_buffer(struct urb *urb, gfp_t mem_flags)
 {
-	struct dma_aligned_buffer *temp, *kmalloc_ptr;
+	void *kmalloc_ptr;
 	size_t kmalloc_size;
 
 	if (urb->num_sgs || urb->sg ||
@@ -2579,22 +2577,31 @@ static int dwc2_alloc_dma_aligned_buffer(struct urb *urb, gfp_t mem_flags)
 	    !((uintptr_t)urb->transfer_buffer & (DWC2_USB_DMA_ALIGN - 1)))
 		return 0;
 
-	/* Allocate a buffer with enough padding for alignment */
+	/*
+	 * Allocate a buffer with enough padding for original transfer_buffer
+	 * pointer. This allocation is guaranteed to be aligned properly for
+	 * DMA
+	 */
 	kmalloc_size = urb->transfer_buffer_length +
-		sizeof(struct dma_aligned_buffer) + DWC2_USB_DMA_ALIGN - 1;
+		(dma_get_cache_alignment() - 1) +
+		sizeof(urb->transfer_buffer);
 
 	kmalloc_ptr = kmalloc(kmalloc_size, mem_flags);
 	if (!kmalloc_ptr)
 		return -ENOMEM;
 
-	/* Position our struct dma_aligned_buffer such that data is aligned */
-	temp = PTR_ALIGN(kmalloc_ptr + 1, DWC2_USB_DMA_ALIGN) - 1;
-	temp->kmalloc_ptr = kmalloc_ptr;
-	temp->old_xfer_buffer = urb->transfer_buffer;
+	/*
+	 * Position value of original urb->transfer_buffer pointer to the end
+	 * of allocation for later referencing
+	 */
+	memcpy(PTR_ALIGN(kmalloc_ptr + urb->transfer_buffer_length,
+			 dma_get_cache_alignment()),
+	       &urb->transfer_buffer, sizeof(urb->transfer_buffer));
+
 	if (usb_urb_dir_out(urb))
-		memcpy(temp->data, urb->transfer_buffer,
+		memcpy(kmalloc_ptr, urb->transfer_buffer,
 		       urb->transfer_buffer_length);
-	urb->transfer_buffer = temp->data;
+	urb->transfer_buffer = kmalloc_ptr;
 
 	urb->transfer_flags |= URB_ALIGNED_TEMP_BUFFER;
 
@@ -5200,7 +5207,6 @@ error3:
 error2:
 	usb_put_hcd(hcd);
 error1:
-	kfree(hsotg->core_params);
 
 #ifdef CONFIG_USB_DWC2_TRACK_MISSED_SOFS
 	kfree(hsotg->last_frame_num_array);

@@ -165,6 +165,12 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		rtnl_lock();
 	lock_sock(sk);
 
+	/* Another thread has converted the socket into IPv4 with
+	 * IPV6_ADDRFORM concurrently.
+	 */
+	if (unlikely(sk->sk_family != AF_INET6))
+		goto unlock;
+
 	switch (optname) {
 
 	case IPV6_ADDRFORM:
@@ -184,8 +190,14 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 					retv = -EBUSY;
 					break;
 				}
-			} else if (sk->sk_protocol != IPPROTO_TCP)
+			} else if (sk->sk_protocol == IPPROTO_TCP) {
+				if (sk->sk_prot != &tcpv6_prot) {
+					retv = -EBUSY;
+					break;
+				}
+			} else {
 				break;
+			}
 
 			if (sk->sk_state != TCP_ESTABLISHED) {
 				retv = -ENOTCONN;
@@ -200,6 +212,7 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 
 			fl6_free_socklist(sk);
 			__ipv6_sock_mc_close(sk);
+			__ipv6_sock_ac_close(sk);
 
 			/*
 			 * Sock is moving from IPv6 to IPv4 (sk_prot), so
@@ -390,6 +403,12 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 	case IPV6_DSTOPTS:
 	{
 		struct ipv6_txoptions *opt;
+		struct ipv6_opt_hdr *new = NULL;
+
+		/* hop-by-hop / destination options are privileged option */
+		retv = -EPERM;
+		if (optname != IPV6_RTHDR && !ns_capable(net->user_ns, CAP_NET_RAW))
+			break;
 
 		/* remove any sticky options header with a zero option
 		 * length, per RFC3542.
@@ -401,17 +420,22 @@ static int do_ipv6_setsockopt(struct sock *sk, int level, int optname,
 		else if (optlen < sizeof(struct ipv6_opt_hdr) ||
 			 optlen & 0x7 || optlen > 8 * 255)
 			goto e_inval;
-
-		/* hop-by-hop / destination options are privileged option */
-		retv = -EPERM;
-		if (optname != IPV6_RTHDR && !ns_capable(net->user_ns, CAP_NET_RAW))
-			break;
+		else {
+			new = memdup_user(optval, optlen);
+			if (IS_ERR(new)) {
+				retv = PTR_ERR(new);
+				break;
+			}
+			if (unlikely(ipv6_optlen(new) > optlen)) {
+				kfree(new);
+				goto e_inval;
+			}
+		}
 
 		opt = rcu_dereference_protected(np->opt,
 						lockdep_sock_is_held(sk));
-		opt = ipv6_renew_options(sk, opt, optname,
-					 (struct ipv6_opt_hdr __user *)optval,
-					 optlen);
+		opt = ipv6_renew_options(sk, opt, optname, new);
+		kfree(new);
 		if (IS_ERR(opt)) {
 			retv = PTR_ERR(opt);
 			break;
@@ -879,6 +903,7 @@ pref_skip_coa:
 		break;
 	}
 
+unlock:
 	release_sock(sk);
 	if (needs_rtnl)
 		rtnl_unlock();

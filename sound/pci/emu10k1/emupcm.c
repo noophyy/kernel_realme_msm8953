@@ -137,7 +137,7 @@ static int snd_emu10k1_pcm_channel_alloc(struct snd_emu10k1_pcm * epcm, int voic
 	epcm->voices[0]->epcm = epcm;
 	if (voices > 1) {
 		for (i = 1; i < voices; i++) {
-			epcm->voices[i] = &epcm->emu->voices[epcm->voices[0]->number + i];
+			epcm->voices[i] = &epcm->emu->voices[(epcm->voices[0]->number + i) % NUM_G];
 			epcm->voices[i]->epcm = epcm;
 		}
 	}
@@ -1850,7 +1850,9 @@ int snd_emu10k1_pcm_efx(struct snd_emu10k1 *emu, int device)
 	if (!kctl)
 		return -ENOMEM;
 	kctl->id.device = device;
-	snd_ctl_add(emu->card, kctl);
+	err = snd_ctl_add(emu->card, kctl);
+	if (err < 0)
+		return err;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(emu->pci), 64*1024, 64*1024);
 

@@ -754,19 +754,6 @@ void pci_update_current_state(struct pci_dev *dev, pci_power_t state)
 }
 
 /**
- * pci_power_up - Put the given device into D0 forcibly
- * @dev: PCI device to power up
- */
-void pci_power_up(struct pci_dev *dev)
-{
-	if (platform_pci_power_manageable(dev))
-		platform_pci_set_power_state(dev, PCI_D0);
-
-	pci_raw_set_power_state(dev, PCI_D0);
-	pci_update_current_state(dev, PCI_D0);
-}
-
-/**
  * pci_platform_power_transition - Use platform to change device power state
  * @dev: PCI device to handle.
  * @state: State to put the device into.
@@ -942,6 +929,17 @@ int pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 EXPORT_SYMBOL(pci_set_power_state);
 
 /**
+ * pci_power_up - Put the given device into D0 forcibly
+ * @dev: PCI device to power up
+ */
+void pci_power_up(struct pci_dev *dev)
+{
+	__pci_start_power_transition(dev, PCI_D0);
+	pci_raw_set_power_state(dev, PCI_D0);
+	pci_update_current_state(dev, PCI_D0);
+}
+
+/**
  * pci_choose_state - Choose the power state of a PCI device
  * @dev: PCI device to be suspended
  * @state: target sleep state for the whole system. This is the value
@@ -1114,12 +1112,12 @@ int pci_save_state(struct pci_dev *dev)
 EXPORT_SYMBOL(pci_save_state);
 
 static void pci_restore_config_dword(struct pci_dev *pdev, int offset,
-				     u32 saved_val, int retry)
+				     u32 saved_val, int retry, bool force)
 {
 	u32 val;
 
 	pci_read_config_dword(pdev, offset, &val);
-	if (val == saved_val)
+	if (!force && val == saved_val)
 		return;
 
 	for (;;) {
@@ -1138,25 +1136,36 @@ static void pci_restore_config_dword(struct pci_dev *pdev, int offset,
 }
 
 static void pci_restore_config_space_range(struct pci_dev *pdev,
-					   int start, int end, int retry)
+					   int start, int end, int retry,
+					   bool force)
 {
 	int index;
 
 	for (index = end; index >= start; index--)
 		pci_restore_config_dword(pdev, 4 * index,
 					 pdev->saved_config_space[index],
-					 retry);
+					 retry, force);
 }
 
 static void pci_restore_config_space(struct pci_dev *pdev)
 {
 	if (pdev->hdr_type == PCI_HEADER_TYPE_NORMAL) {
-		pci_restore_config_space_range(pdev, 10, 15, 0);
+		pci_restore_config_space_range(pdev, 10, 15, 0, false);
 		/* Restore BARs before the command register. */
-		pci_restore_config_space_range(pdev, 4, 9, 10);
-		pci_restore_config_space_range(pdev, 0, 3, 0);
+		pci_restore_config_space_range(pdev, 4, 9, 10, false);
+		pci_restore_config_space_range(pdev, 0, 3, 0, false);
+	} else if (pdev->hdr_type == PCI_HEADER_TYPE_BRIDGE) {
+		pci_restore_config_space_range(pdev, 12, 15, 0, false);
+
+		/*
+		 * Force rewriting of prefetch registers to avoid S3 resume
+		 * issues on Intel PCI bridges that occur when these
+		 * registers are not explicitly written.
+		 */
+		pci_restore_config_space_range(pdev, 9, 11, 0, true);
+		pci_restore_config_space_range(pdev, 0, 8, 0, false);
 	} else {
-		pci_restore_config_space_range(pdev, 0, 15, 0);
+		pci_restore_config_space_range(pdev, 0, 15, 0, false);
 	}
 }
 
@@ -1375,11 +1384,7 @@ static int pci_enable_device_flags(struct pci_dev *dev, unsigned long flags)
 	 * so that things like MSI message writing will behave as expected
 	 * (e.g. if the device really is in D0 at enable time).
 	 */
-	if (dev->pm_cap) {
-		u16 pmcsr;
-		pci_read_config_word(dev, dev->pm_cap + PCI_PM_CTRL, &pmcsr);
-		dev->current_state = (pmcsr & PCI_PM_CTRL_STATE_MASK);
-	}
+	pci_update_current_state(dev, dev->current_state);
 
 	if (atomic_inc_return(&dev->enable_cnt) > 1)
 		return 0;		/* already enabled */
@@ -1775,6 +1780,13 @@ static void pci_pme_list_scan(struct work_struct *work)
 			 */
 			if (bridge && bridge->current_state != PCI_D0)
 				continue;
+			/*
+			 * If the device is in D3cold it should not be
+			 * polled either.
+			 */
+			if (pme_dev->dev->current_state == PCI_D3cold)
+				continue;
+
 			pci_pme_wakeup(pme_dev->dev, NULL);
 		} else {
 			list_del(&pme_dev->list);
@@ -1910,7 +1922,14 @@ int __pci_enable_wake(struct pci_dev *dev, pci_power_t state,
 	if (enable) {
 		int error;
 
-		if (pci_pme_capable(dev, state))
+		/*
+		 * Enable PME signaling if the device can signal PME from
+		 * D3cold regardless of whether or not it can signal PME from
+		 * the current target state, because that will allow it to
+		 * signal PME when the hierarchy above it goes into D3cold and
+		 * the device itself ends up in D3cold as a result of that.
+		 */
+		if (pci_pme_capable(dev, state) || pci_pme_capable(dev, PCI_D3cold))
 			pci_pme_active(dev, true);
 		else
 			ret = 1;
@@ -3407,6 +3426,44 @@ void pci_unmap_iospace(struct resource *res)
 #endif
 }
 
+static void devm_pci_unmap_iospace(struct device *dev, void *ptr)
+{
+	struct resource **res = ptr;
+
+	pci_unmap_iospace(*res);
+}
+
+/**
+ * devm_pci_remap_iospace - Managed pci_remap_iospace()
+ * @dev: Generic device to remap IO address for
+ * @res: Resource describing the I/O space
+ * @phys_addr: physical address of range to be mapped
+ *
+ * Managed pci_remap_iospace().  Map is automatically unmapped on driver
+ * detach.
+ */
+int devm_pci_remap_iospace(struct device *dev, const struct resource *res,
+			   phys_addr_t phys_addr)
+{
+	const struct resource **ptr;
+	int error;
+
+	ptr = devres_alloc(devm_pci_unmap_iospace, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	error = pci_remap_iospace(res, phys_addr);
+	if (error) {
+		devres_free(ptr);
+	} else	{
+		*ptr = res;
+		devres_add(dev, ptr);
+	}
+
+	return error;
+}
+EXPORT_SYMBOL(devm_pci_remap_iospace);
+
 static void __pci_set_master(struct pci_dev *dev, bool enable)
 {
 	u16 old_cmd, cmd;
@@ -4022,18 +4079,18 @@ done:
 
 static void pci_dev_lock(struct pci_dev *dev)
 {
-	pci_cfg_access_lock(dev);
 	/* block PM suspend, driver probe, etc. */
 	device_lock(&dev->dev);
+	pci_cfg_access_lock(dev);
 }
 
 /* Return 1 on successful lock, 0 on contention */
 static int pci_dev_trylock(struct pci_dev *dev)
 {
-	if (pci_cfg_access_trylock(dev)) {
-		if (device_trylock(&dev->dev))
+	if (device_trylock(&dev->dev)) {
+		if (pci_cfg_access_trylock(dev))
 			return 1;
-		pci_cfg_access_unlock(dev);
+		device_unlock(&dev->dev);
 	}
 
 	return 0;
@@ -4041,8 +4098,8 @@ static int pci_dev_trylock(struct pci_dev *dev)
 
 static void pci_dev_unlock(struct pci_dev *dev)
 {
-	device_unlock(&dev->dev);
 	pci_cfg_access_unlock(dev);
+	device_unlock(&dev->dev);
 }
 
 /**

@@ -230,6 +230,8 @@ static int __revoke_inmem_pages(struct inode *inode,
 
 		lock_page(page);
 
+		f2fs_wait_on_page_writeback(page, DATA, true);
+
 		if (recover) {
 			struct dnode_of_data dn;
 			struct node_info ni;
@@ -258,8 +260,10 @@ retry:
 		}
 next:
 		/* we don't need to invalidate this in the sccessful status */
-		if (drop || recover)
+		if (drop || recover) {
 			ClearPageUptodate(page);
+			clear_cold_data(page);
+		}
 		set_page_private(page, 0);
 		ClearPagePrivate(page);
 		f2fs_put_page(page, 1);
@@ -478,6 +482,9 @@ void f2fs_balance_fs(struct f2fs_sb_info *sbi, bool need)
 
 void f2fs_balance_fs_bg(struct f2fs_sb_info *sbi)
 {
+	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
+		return;
+
 	/* try to shrink extent cache when there is no enough memory */
 	if (!available_free_memory(sbi, EXTENT_CACHE))
 		f2fs_shrink_extent_tree(sbi, EXTENT_CACHE_SHRINK_NUMBER);
@@ -3668,6 +3675,15 @@ static int build_sit_entries(struct f2fs_sb_info *sbi)
 		unsigned int old_valid_blocks;
 
 		start = le32_to_cpu(segno_in_journal(journal, i));
+		if (start >= MAIN_SEGS(sbi)) {
+			f2fs_msg(sbi->sb, KERN_ERR,
+					"Wrong journal entry on segno %u",
+					start);
+			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			err = -EINVAL;
+			break;
+		}
+
 		se = &sit_i->sentries[start];
 		sit = sit_in_journal(journal, i);
 
@@ -3783,6 +3799,41 @@ static int build_dirty_segmap(struct f2fs_sb_info *sbi)
 	return init_victim_secmap(sbi);
 }
 
+static int sanity_check_curseg(struct f2fs_sb_info *sbi)
+{
+	int i;
+
+	/*
+	 * In LFS/SSR curseg, .next_blkoff should point to an unused blkaddr;
+	 * In LFS curseg, all blkaddr after .next_blkoff should be unused.
+	 */
+	for (i = 0; i < NO_CHECK_TYPE; i++) {
+		struct curseg_info *curseg = CURSEG_I(sbi, i);
+		struct seg_entry *se = get_seg_entry(sbi, curseg->segno);
+		unsigned int blkofs = curseg->next_blkoff;
+
+		if (f2fs_test_bit(blkofs, se->cur_valid_map))
+			goto out;
+
+		if (curseg->alloc_type == SSR)
+			continue;
+
+		for (blkofs += 1; blkofs < sbi->blocks_per_seg; blkofs++) {
+			if (!f2fs_test_bit(blkofs, se->cur_valid_map))
+				continue;
+out:
+			f2fs_msg(sbi->sb, KERN_ERR,
+				"Current segment's next free block offset is "
+				"inconsistent with bitmap, logtype:%u, "
+				"segno:%u, type:%u, next_blkoff:%u, blkofs:%u",
+				i, curseg->segno, curseg->alloc_type,
+				curseg->next_blkoff, blkofs);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
 /*
  * Update min, max modified time for cost-benefit GC algorithm
  */
@@ -3874,6 +3925,10 @@ int build_segment_manager(struct f2fs_sb_info *sbi)
 
 	init_free_segmap(sbi);
 	err = build_dirty_segmap(sbi);
+	if (err)
+		return err;
+
+	err = sanity_check_curseg(sbi);
 	if (err)
 		return err;
 

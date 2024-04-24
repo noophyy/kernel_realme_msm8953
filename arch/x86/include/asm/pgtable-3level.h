@@ -1,6 +1,8 @@
 #ifndef _ASM_X86_PGTABLE_3LEVEL_H
 #define _ASM_X86_PGTABLE_3LEVEL_H
 
+#include <asm/atomic64_32.h>
+
 /*
  * Intel Physical Address Extension (PAE) Mode - three-level page
  * tables on PPro+ CPUs.
@@ -142,10 +144,7 @@ static inline pte_t native_ptep_get_and_clear(pte_t *ptep)
 {
 	pte_t res;
 
-	/* xchg acts as a barrier before the setting of the high bits */
-	res.pte_low = xchg(&ptep->pte_low, 0);
-	res.pte_high = ptep->pte_high;
-	ptep->pte_high = 0;
+	res.pte = (pteval_t)atomic64_xchg((atomic64_t *)ptep, 0);
 
 	return res;
 }
@@ -183,5 +182,7 @@ static inline pmd_t native_pmdp_get_and_clear(pmd_t *pmdp)
 #define __swp_entry(type, offset)	((swp_entry_t){(type) | (offset) << 5})
 #define __pte_to_swp_entry(pte)		((swp_entry_t){ (pte).pte_high })
 #define __swp_entry_to_pte(x)		((pte_t){ { .pte_high = (x).val } })
+
+#include <asm/pgtable-invert.h>
 
 #endif /* _ASM_X86_PGTABLE_3LEVEL_H */

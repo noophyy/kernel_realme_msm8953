@@ -245,7 +245,7 @@ static void dwc3_omap_set_mailbox(struct dwc3_omap *omap,
 		break;
 
 	case OMAP_DWC3_ID_FLOAT:
-		if (omap->vbus_reg)
+		if (omap->vbus_reg && regulator_is_enabled(omap->vbus_reg))
 			regulator_disable(omap->vbus_reg);
 		val = dwc3_omap_read_utmi_ctrl(omap);
 		val |= USBOTGSS_UTMI_OTG_CTRL_IDDIG;
@@ -512,15 +512,6 @@ static int dwc3_omap_probe(struct platform_device *pdev)
 
 	/* check the DMA Status */
 	reg = dwc3_omap_readl(omap->base, USBOTGSS_SYSCONFIG);
-	irq_set_status_flags(omap->irq, IRQ_NOAUTOEN);
-	ret = devm_request_threaded_irq(dev, omap->irq, dwc3_omap_interrupt,
-					dwc3_omap_interrupt_thread, IRQF_SHARED,
-					"dwc3-omap", omap);
-	if (ret) {
-		dev_err(dev, "failed to request IRQ #%d --> %d\n",
-				omap->irq, ret);
-		goto err1;
-	}
 
 	ret = dwc3_omap_extcon_register(omap);
 	if (ret < 0)
@@ -532,8 +523,15 @@ static int dwc3_omap_probe(struct platform_device *pdev)
 		goto err2;
 	}
 
+	ret = devm_request_threaded_irq(dev, omap->irq, dwc3_omap_interrupt,
+					dwc3_omap_interrupt_thread, IRQF_SHARED,
+					"dwc3-omap", omap);
+	if (ret) {
+		dev_err(dev, "failed to request IRQ #%d --> %d\n",
+			omap->irq, ret);
+		goto err1;
+	}
 	dwc3_omap_enable_irqs(omap);
-	enable_irq(omap->irq);
 	return 0;
 
 err2:

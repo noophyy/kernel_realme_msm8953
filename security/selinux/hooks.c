@@ -238,6 +238,7 @@ static int inode_alloc_security(struct inode *inode)
 	isec->sid = SECINITSID_UNLABELED;
 	isec->sclass = SECCLASS_FILE;
 	isec->task_sid = sid;
+	isec->initialized = LABEL_INVALID;
 	inode->i_security = isec;
 
 	return 0;
@@ -248,7 +249,7 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 /*
  * Try reloading inode security labels that have been marked as invalid.  The
  * @may_sleep parameter indicates when sleeping and thus reloading labels is
- * allowed; when set to false, returns ERR_PTR(-ECHILD) when the label is
+ * allowed; when set to false, returns -ECHILD when the label is
  * invalid.  The @opt_dentry parameter should be set to a dentry of the inode;
  * when no dentry is available, set it to NULL instead.
  */
@@ -1375,11 +1376,14 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 	int rc = 0;
 
 	if (isec->initialized == LABEL_INITIALIZED)
-		goto out;
+		return 0;
 
 	mutex_lock(&isec->lock);
 	if (isec->initialized == LABEL_INITIALIZED)
 		goto out_unlock;
+
+	if (isec->sclass == SECCLASS_FILE)
+		isec->sclass = inode_mode_to_security_class(inode->i_mode);
 
 	sbsec = inode->i_sb->s_security;
 	if (!(sbsec->flags & SE_SBINITIALIZED)) {
@@ -1498,7 +1502,6 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 		isec->sid = sbsec->sid;
 
 		/* Try to obtain a transition SID. */
-		isec->sclass = inode_mode_to_security_class(inode->i_mode);
 		rc = security_transition_sid(isec->task_sid, sbsec->sid,
 					     isec->sclass, NULL, &sid);
 		if (rc)
@@ -1534,7 +1537,6 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 			 */
 			if (!dentry)
 				goto out_unlock;
-			isec->sclass = inode_mode_to_security_class(inode->i_mode);
 			rc = selinux_genfs_get_sid(dentry, isec->sclass,
 						   sbsec->flags, &sid);
 			dput(dentry);
@@ -1549,9 +1551,6 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 
 out_unlock:
 	mutex_unlock(&isec->lock);
-out:
-	if (isec->sclass == SECCLASS_FILE)
-		isec->sclass = inode_mode_to_security_class(inode->i_mode);
 	return rc;
 }
 
@@ -2280,20 +2279,15 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
 			    const struct task_security_struct *old_tsec,
 			    const struct task_security_struct *new_tsec)
 {
-
-	#ifdef CONFIG_KSU
-	static u32 ksu_sid;
-	char *secdata;
-	#endif
-
 	int nnp = (bprm->unsafe & LSM_UNSAFE_NO_NEW_PRIVS);
 	int nosuid = !mnt_may_suid(bprm->file->f_path.mnt);
+	int rc;
 
 	#ifdef CONFIG_KSU
-	int rc,error;
-	u32 seclen;
-	#else
-	int rc;
+    static u32 ksu_sid;
+    char *secdata;
+    int error;
+    u32 seclen;
 	#endif
 
 	if (!nnp && !nosuid)
@@ -2303,17 +2297,17 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
 		return 0; /* No change in credentials */
 
 	#ifdef CONFIG_KSU
-	if(!ksu_sid){
-		security_secctx_to_secid("u:r:su:s0", strlen("u:r:su:s0"), &ksu_sid);
+	if (!ksu_sid) {
+        security_secctx_to_secid("u:r:su:s0", strlen("u:r:su:s0"), &ksu_sid);
 	}
 	error = security_secid_to_secctx(old_tsec->sid, &secdata, &seclen);
 	if (!error) {
-		rc = strcmp("u:r:init:s0",secdata);
-		security_release_secctx(secdata, seclen);
-		if(rc == 0 && new_tsec->sid == ksu_sid){
+        rc = strcmp("u:r:init:s0",secdata);
+        security_release_secctx(secdata, seclen);
+        if (rc == 0 && new_tsec->sid == ksu_sid) {
 			return 0;
-		}
-	}
+        }
+    }
 	#endif
 
 	/*
@@ -2803,7 +2797,7 @@ static int selinux_sb_kern_mount(struct super_block *sb, int flags, void *data)
 		return rc;
 
 	/* Allow all mounts performed by the kernel */
-	if (flags & MS_KERNMOUNT)
+	if (flags & (MS_KERNMOUNT | MS_SUBMOUNT))
 		return 0;
 
 	ad.type = LSM_AUDIT_DATA_DENTRY;
@@ -3310,10 +3304,14 @@ static int selinux_inode_setsecurity(struct inode *inode, const char *name,
 				     const void *value, size_t size, int flags)
 {
 	struct inode_security_struct *isec = inode_security_novalidate(inode);
+	struct superblock_security_struct *sbsec = inode->i_sb->s_security;
 	u32 newsid;
 	int rc;
 
 	if (strcmp(name, XATTR_SELINUX_SUFFIX))
+		return -EOPNOTSUPP;
+
+	if (!(sbsec->flags & SBLABEL_MNT))
 		return -EOPNOTSUPP;
 
 	if (!value || !size)
@@ -3975,17 +3973,13 @@ static int selinux_task_kill(struct task_struct *p, struct siginfo *info,
 	return rc;
 }
 
-static int selinux_task_wait(struct task_struct *p)
-{
-	return task_has_perm(p, current, PROCESS__SIGCHLD);
-}
-
 static void selinux_task_to_inode(struct task_struct *p,
 				  struct inode *inode)
 {
 	struct inode_security_struct *isec = inode->i_security;
 	u32 sid = task_sid(p);
 
+	isec->sclass = inode_mode_to_security_class(inode->i_mode);
 	isec->sid = sid;
 	isec->initialized = LABEL_INITIALIZED;
 }
@@ -5214,7 +5208,7 @@ static unsigned int selinux_ip_postroute_compat(struct sk_buff *skb,
 	struct common_audit_data ad;
 	struct lsm_network_audit net = {0,};
 	char *addrp;
-	u8 proto;
+	u8 proto = 0;
 
 	if (sk == NULL)
 		return NF_ACCEPT;
@@ -6045,7 +6039,10 @@ static void selinux_inode_invalidate_secctx(struct inode *inode)
  */
 static int selinux_inode_notifysecctx(struct inode *inode, void *ctx, u32 ctxlen)
 {
-	return selinux_inode_setsecurity(inode, XATTR_SELINUX_SUFFIX, ctx, ctxlen, 0);
+	int rc = selinux_inode_setsecurity(inode, XATTR_SELINUX_SUFFIX,
+					   ctx, ctxlen, 0);
+	/* Do not return error when suppressing label (SBLABEL_MNT not set). */
+	return rc == -EOPNOTSUPP ? 0 : rc;
 }
 
 /*
@@ -6370,7 +6367,6 @@ static struct security_hook_list selinux_hooks[] __lsm_ro_after_init = {
 	LSM_HOOK_INIT(task_getscheduler, selinux_task_getscheduler),
 	LSM_HOOK_INIT(task_movememory, selinux_task_movememory),
 	LSM_HOOK_INIT(task_kill, selinux_task_kill),
-	LSM_HOOK_INIT(task_wait, selinux_task_wait),
 	LSM_HOOK_INIT(task_to_inode, selinux_task_to_inode),
 
 	LSM_HOOK_INIT(ipc_permission, selinux_ipc_permission),

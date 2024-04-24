@@ -134,6 +134,7 @@
 #define PPC_INST_COPY			0x7c00060c
 #define PPC_INST_COPY_FIRST		0x7c20060c
 #define PPC_INST_CP_ABORT		0x7c00068c
+#define PPC_INST_DARN			0x7c0005e6
 #define PPC_INST_DCBA			0x7c0005ec
 #define PPC_INST_DCBA_MASK		0xfc0007fe
 #define PPC_INST_DCBAL			0x7c2005ec
@@ -225,6 +226,7 @@
 /* Misc instructions for BPF compiler */
 #define PPC_INST_LBZ			0x88000000
 #define PPC_INST_LD			0xe8000000
+#define PPC_INST_LDX			0x7c00002a
 #define PPC_INST_LHZ			0xa0000000
 #define PPC_INST_LWZ			0x80000000
 #define PPC_INST_LHBRX			0x7c00062c
@@ -232,6 +234,7 @@
 #define PPC_INST_STB			0x98000000
 #define PPC_INST_STH			0xb0000000
 #define PPC_INST_STD			0xf8000000
+#define PPC_INST_STDX			0x7c00012a
 #define PPC_INST_STDU			0xf8000001
 #define PPC_INST_STW			0x90000000
 #define PPC_INST_STWU			0x94000000
@@ -259,6 +262,7 @@
 #define PPC_INST_MULLI			0x1c000000
 #define PPC_INST_DIVWU			0x7c000396
 #define PPC_INST_DIVD			0x7c0003d2
+#define PPC_INST_DIVDU			0x7c000392
 #define PPC_INST_RLWINM			0x54000000
 #define PPC_INST_RLWIMI			0x50000000
 #define PPC_INST_RLDICL			0x78000000
@@ -325,6 +329,9 @@
 
 /* Deal with instructions that older assemblers aren't aware of */
 #define	PPC_CP_ABORT		stringify_in_c(.long PPC_INST_CP_ABORT)
+#define PPC_DARN(t, l)		stringify_in_c(.long PPC_INST_DARN |  \
+						___PPC_RT(t)	   |  \
+						(((l) & 0x3) << 16))
 #define	PPC_DCBAL(a, b)		stringify_in_c(.long PPC_INST_DCBAL | \
 					__PPC_RA(a) | __PPC_RB(b))
 #define	PPC_DCBZL(a, b)		stringify_in_c(.long PPC_INST_DCBZL | \

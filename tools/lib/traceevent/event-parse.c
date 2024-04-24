@@ -2204,7 +2204,7 @@ eval_type_str(unsigned long long val, const char *type, int pointer)
 		return val & 0xffffffff;
 
 	if (strcmp(type, "u64") == 0 ||
-	    strcmp(type, "s64"))
+	    strcmp(type, "s64") == 0)
 		return val;
 
 	if (strcmp(type, "s8") == 0)
@@ -2428,7 +2428,7 @@ static int arg_num_eval(struct print_arg *arg, long long *val)
 static char *arg_eval (struct print_arg *arg)
 {
 	long long val;
-	static char buf[20];
+	static char buf[24];
 
 	switch (arg->type) {
 	case PRINT_ATOM:
@@ -2765,6 +2765,7 @@ process_dynamic_array_len(struct event_format *event, struct print_arg *arg,
 	if (read_expected(EVENT_DELIM, ")") < 0)
 		goto out_err;
 
+	free_token(token);
 	type = read_token(&token);
 	*tok = token;
 

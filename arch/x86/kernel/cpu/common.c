@@ -61,6 +61,13 @@ cpumask_var_t cpu_callin_mask;
 /* representing cpus for which sibling maps can be computed */
 cpumask_var_t cpu_sibling_setup_mask;
 
+/* Number of siblings per CPU package */
+int smp_num_siblings = 1;
+EXPORT_SYMBOL(smp_num_siblings);
+
+/* Last level cache ID of each logical CPU */
+DEFINE_PER_CPU_READ_MOSTLY(u16, cpu_llc_id) = BAD_APICID;
+
 /* correctly size the local cpu masks */
 void __init setup_cpu_local_masks(void)
 {
@@ -381,7 +388,7 @@ static __always_inline void setup_pku(struct cpuinfo_x86 *c)
 	 * cpuid bit to be set.  We need to ensure that we
 	 * update that bit in this CPU's "cpu_info".
 	 */
-	get_cpu_cap(c);
+	set_cpu_cap(c, X86_FEATURE_OSPKE);
 }
 
 #ifdef CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS
@@ -606,33 +613,36 @@ static void cpu_detect_tlb(struct cpuinfo_x86 *c)
 		tlb_lld_4m[ENTRIES], tlb_lld_1g[ENTRIES]);
 }
 
-void detect_ht(struct cpuinfo_x86 *c)
+int detect_ht_early(struct cpuinfo_x86 *c)
 {
 #ifdef CONFIG_SMP
 	u32 eax, ebx, ecx, edx;
-	int index_msb, core_bits;
-	static bool printed;
 
 	if (!cpu_has(c, X86_FEATURE_HT))
-		return;
+		return -1;
 
 	if (cpu_has(c, X86_FEATURE_CMP_LEGACY))
-		goto out;
+		return -1;
 
 	if (cpu_has(c, X86_FEATURE_XTOPOLOGY))
-		return;
+		return -1;
 
 	cpuid(1, &eax, &ebx, &ecx, &edx);
 
 	smp_num_siblings = (ebx & 0xff0000) >> 16;
-
-	if (smp_num_siblings == 1) {
+	if (smp_num_siblings == 1)
 		pr_info_once("CPU0: Hyper-Threading is disabled\n");
-		goto out;
-	}
+#endif
+	return 0;
+}
 
-	if (smp_num_siblings <= 1)
-		goto out;
+void detect_ht(struct cpuinfo_x86 *c)
+{
+#ifdef CONFIG_SMP
+	int index_msb, core_bits;
+
+	if (detect_ht_early(c) < 0)
+		return;
 
 	index_msb = get_count_order(smp_num_siblings);
 	c->phys_proc_id = apic->phys_pkg_id(c->initial_apicid, index_msb);
@@ -645,15 +655,6 @@ void detect_ht(struct cpuinfo_x86 *c)
 
 	c->cpu_core_id = apic->phys_pkg_id(c->initial_apicid, index_msb) &
 				       ((1 << core_bits) - 1);
-
-out:
-	if (!printed && (c->x86_max_cores * smp_num_siblings) > 1) {
-		pr_info("CPU: Physical Processor ID: %d\n",
-			c->phys_proc_id);
-		pr_info("CPU: Processor Core ID: %d\n",
-			c->cpu_core_id);
-		printed = 1;
-	}
 #endif
 }
 
@@ -751,6 +752,12 @@ static void init_speculation_control(struct cpuinfo_x86 *c)
 		set_cpu_cap(c, X86_FEATURE_STIBP);
 		set_cpu_cap(c, X86_FEATURE_MSR_SPEC_CTRL);
 	}
+
+	if (cpu_has(c, X86_FEATURE_AMD_SSBD)) {
+		set_cpu_cap(c, X86_FEATURE_SSBD);
+		set_cpu_cap(c, X86_FEATURE_MSR_SPEC_CTRL);
+		clear_cpu_cap(c, X86_FEATURE_VIRT_SSBD);
+	}
 }
 
 void get_cpu_cap(struct cpuinfo_x86 *c)
@@ -842,6 +849,7 @@ void get_cpu_cap(struct cpuinfo_x86 *c)
 	else if (cpu_has(c, X86_FEATURE_PAE) || cpu_has(c, X86_FEATURE_PSE36))
 		c->x86_phys_bits = 36;
 #endif
+	c->x86_cache_bits = c->x86_phys_bits;
 
 	if (c->extended_cpuid_level >= 0x8000000a)
 		c->x86_capability[CPUID_8000_000A_EDX] = cpuid_edx(0x8000000a);
@@ -883,66 +891,192 @@ static void identify_cpu_without_cpuid(struct cpuinfo_x86 *c)
 #endif
 }
 
-static const __initconst struct x86_cpu_id cpu_no_speculation[] = {
-	{ X86_VENDOR_INTEL,	6, INTEL_FAM6_ATOM_CEDARVIEW,	X86_FEATURE_ANY },
-	{ X86_VENDOR_INTEL,	6, INTEL_FAM6_ATOM_CLOVERVIEW,	X86_FEATURE_ANY },
-	{ X86_VENDOR_INTEL,	6, INTEL_FAM6_ATOM_LINCROFT,	X86_FEATURE_ANY },
-	{ X86_VENDOR_INTEL,	6, INTEL_FAM6_ATOM_PENWELL,	X86_FEATURE_ANY },
-	{ X86_VENDOR_INTEL,	6, INTEL_FAM6_ATOM_PINEVIEW,	X86_FEATURE_ANY },
-	{ X86_VENDOR_CENTAUR,	5 },
-	{ X86_VENDOR_INTEL,	5 },
-	{ X86_VENDOR_NSC,	5 },
-	{ X86_VENDOR_ANY,	4 },
+#define NO_SPECULATION	BIT(0)
+#define NO_MELTDOWN	BIT(1)
+#define NO_SSB		BIT(2)
+#define NO_L1TF		BIT(3)
+
+#define VULNWL(_vendor, _family, _model, _whitelist)	\
+	{ X86_VENDOR_##_vendor, _family, _model, X86_FEATURE_ANY, _whitelist }
+
+#define VULNWL_INTEL(model, whitelist)		\
+	VULNWL(INTEL, 6, INTEL_FAM6_##model, whitelist)
+
+#define VULNWL_AMD(family, whitelist)		\
+	VULNWL(AMD, family, X86_MODEL_ANY, whitelist)
+
+static const __initconst struct x86_cpu_id cpu_vuln_whitelist[] = {
+	VULNWL(ANY,	4, X86_MODEL_ANY,	NO_SPECULATION),
+	VULNWL(CENTAUR,	5, X86_MODEL_ANY,	NO_SPECULATION),
+	VULNWL(INTEL,	5, X86_MODEL_ANY,	NO_SPECULATION),
+	VULNWL(NSC,	5, X86_MODEL_ANY,	NO_SPECULATION),
+
+	VULNWL_INTEL(ATOM_SALTWELL,		NO_SPECULATION),
+	VULNWL_INTEL(ATOM_SALTWELL_TABLET,	NO_SPECULATION),
+	VULNWL_INTEL(ATOM_SALTWELL_MID,		NO_SPECULATION),
+	VULNWL_INTEL(ATOM_BONNELL,		NO_SPECULATION),
+	VULNWL_INTEL(ATOM_BONNELL_MID,		NO_SPECULATION),
+
+	VULNWL_INTEL(ATOM_SILVERMONT,		NO_SSB | NO_L1TF),
+	VULNWL_INTEL(ATOM_SILVERMONT_X,		NO_SSB | NO_L1TF),
+	VULNWL_INTEL(ATOM_SILVERMONT_MID,	NO_SSB | NO_L1TF),
+	VULNWL_INTEL(ATOM_AIRMONT,		NO_SSB | NO_L1TF),
+	VULNWL_INTEL(XEON_PHI_KNL,		NO_SSB | NO_L1TF),
+	VULNWL_INTEL(XEON_PHI_KNM,		NO_SSB | NO_L1TF),
+
+	VULNWL_INTEL(CORE_YONAH,		NO_SSB),
+
+	VULNWL_INTEL(ATOM_AIRMONT_MID,		NO_L1TF),
+	VULNWL_INTEL(ATOM_GOLDMONT,		NO_L1TF),
+	VULNWL_INTEL(ATOM_GOLDMONT_X,		NO_L1TF),
+	VULNWL_INTEL(ATOM_GOLDMONT_PLUS,	NO_L1TF),
+
+	VULNWL_AMD(0x0f,		NO_MELTDOWN | NO_SSB | NO_L1TF),
+	VULNWL_AMD(0x10,		NO_MELTDOWN | NO_SSB | NO_L1TF),
+	VULNWL_AMD(0x11,		NO_MELTDOWN | NO_SSB | NO_L1TF),
+	VULNWL_AMD(0x12,		NO_MELTDOWN | NO_SSB | NO_L1TF),
+
+	/* FAMILY_ANY must be last, otherwise 0x0f - 0x12 matches won't work */
+	VULNWL_AMD(X86_FAMILY_ANY,	NO_MELTDOWN | NO_L1TF),
 	{}
 };
 
-static const __initconst struct x86_cpu_id cpu_no_meltdown[] = {
-	{ X86_VENDOR_AMD },
+#define VULNBL_INTEL_STEPPINGS(model, steppings, issues)		   \
+	X86_MATCH_VENDOR_FAM_MODEL_STEPPINGS_FEATURE(INTEL, 6,		   \
+					    INTEL_FAM6_##model, steppings, \
+					    X86_FEATURE_ANY, issues)
+
+#define SRBDS		BIT(0)
+/* CPU is affected by X86_BUG_MMIO_STALE_DATA */
+#define MMIO		BIT(1)
+/* CPU is affected by Shared Buffers Data Sampling (SBDS), a variant of X86_BUG_MMIO_STALE_DATA */
+#define MMIO_SBDS	BIT(2)
+
+static const struct x86_cpu_id cpu_vuln_blacklist[] __initconst = {
+	VULNBL_INTEL_STEPPINGS(IVYBRIDGE,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(HASWELL_CORE,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(HASWELL_ULT,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(HASWELL_GT3E,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(HASWELL_X,	BIT(2) | BIT(4),		MMIO),
+	VULNBL_INTEL_STEPPINGS(BROADWELL_XEON_D,X86_STEPPINGS(0x3, 0x5),	MMIO),
+	VULNBL_INTEL_STEPPINGS(BROADWELL_GT3E,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(BROADWELL_X,	X86_STEPPING_ANY,		MMIO),
+	VULNBL_INTEL_STEPPINGS(BROADWELL_CORE,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(SKYLAKE_MOBILE,	X86_STEPPINGS(0x3, 0x3),	SRBDS | MMIO),
+	VULNBL_INTEL_STEPPINGS(SKYLAKE_MOBILE,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(SKYLAKE_X,	BIT(3) | BIT(4) | BIT(6) |
+						BIT(7) | BIT(0xB),              MMIO),
+	VULNBL_INTEL_STEPPINGS(SKYLAKE_DESKTOP,	X86_STEPPINGS(0x3, 0x3),	SRBDS | MMIO),
+	VULNBL_INTEL_STEPPINGS(SKYLAKE_DESKTOP,	X86_STEPPING_ANY,		SRBDS),
+	VULNBL_INTEL_STEPPINGS(KABYLAKE_MOBILE,	X86_STEPPINGS(0x9, 0xC),	SRBDS | MMIO),
+	VULNBL_INTEL_STEPPINGS(KABYLAKE_MOBILE,	X86_STEPPINGS(0x0, 0x8),	SRBDS),
+	VULNBL_INTEL_STEPPINGS(KABYLAKE_DESKTOP,X86_STEPPINGS(0x9, 0xD),	SRBDS | MMIO),
+	VULNBL_INTEL_STEPPINGS(KABYLAKE_DESKTOP,X86_STEPPINGS(0x0, 0x8),	SRBDS),
+	VULNBL_INTEL_STEPPINGS(ICELAKE_MOBILE,	X86_STEPPINGS(0x5, 0x5),	MMIO | MMIO_SBDS),
+	VULNBL_INTEL_STEPPINGS(ICELAKE_XEON_D,	X86_STEPPINGS(0x1, 0x1),	MMIO),
+	VULNBL_INTEL_STEPPINGS(ICELAKE_X,	X86_STEPPINGS(0x4, 0x6),	MMIO),
+	VULNBL_INTEL_STEPPINGS(COMETLAKE,	BIT(2) | BIT(3) | BIT(5),	MMIO | MMIO_SBDS),
+	VULNBL_INTEL_STEPPINGS(COMETLAKE_L,	X86_STEPPINGS(0x1, 0x1),	MMIO | MMIO_SBDS),
+	VULNBL_INTEL_STEPPINGS(COMETLAKE_L,	X86_STEPPINGS(0x0, 0x0),	MMIO),
+	VULNBL_INTEL_STEPPINGS(LAKEFIELD,	X86_STEPPINGS(0x1, 0x1),	MMIO | MMIO_SBDS),
+	VULNBL_INTEL_STEPPINGS(ROCKETLAKE,	X86_STEPPINGS(0x1, 0x1),	MMIO),
+	VULNBL_INTEL_STEPPINGS(ATOM_TREMONT,	X86_STEPPINGS(0x1, 0x1),	MMIO | MMIO_SBDS),
+	VULNBL_INTEL_STEPPINGS(ATOM_TREMONT_X,	X86_STEPPING_ANY,		MMIO),
+	VULNBL_INTEL_STEPPINGS(ATOM_TREMONT_L,	X86_STEPPINGS(0x0, 0x0),	MMIO | MMIO_SBDS),
 	{}
 };
 
-static const __initconst struct x86_cpu_id cpu_no_spec_store_bypass[] = {
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_PINEVIEW	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_LINCROFT	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_PENWELL		},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_CLOVERVIEW	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_CEDARVIEW	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_SILVERMONT1	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_AIRMONT		},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_SILVERMONT2	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_ATOM_MERRIFIELD	},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_CORE_YONAH		},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_XEON_PHI_KNL		},
-	{ X86_VENDOR_INTEL,	6,	INTEL_FAM6_XEON_PHI_KNM		},
-	{ X86_VENDOR_CENTAUR,	5,					},
-	{ X86_VENDOR_INTEL,	5,					},
-	{ X86_VENDOR_NSC,	5,					},
-	{ X86_VENDOR_AMD,	0x12,					},
-	{ X86_VENDOR_AMD,	0x11,					},
-	{ X86_VENDOR_AMD,	0x10,					},
-	{ X86_VENDOR_AMD,	0xf,					},
-	{ X86_VENDOR_ANY,	4,					},
-	{}
-};
+static bool __init cpu_matches(const struct x86_cpu_id *table, unsigned long which)
+{
+	const struct x86_cpu_id *m = x86_match_cpu(cpu_vuln_whitelist);
 
-static void __init cpu_set_bug_bits(struct cpuinfo_x86 *c)
+	return m && !!(m->driver_data & which);
+}
+
+u64 x86_read_arch_cap_msr(void)
 {
 	u64 ia32_cap = 0;
 
-	if (cpu_has(c, X86_FEATURE_ARCH_CAPABILITIES))
+	if (boot_cpu_has(X86_FEATURE_ARCH_CAPABILITIES))
 		rdmsrl(MSR_IA32_ARCH_CAPABILITIES, ia32_cap);
 
-	if (!x86_match_cpu(cpu_no_spec_store_bypass) &&
-	   !(ia32_cap & ARCH_CAP_SSB_NO))
-		setup_force_cpu_bug(X86_BUG_SPEC_STORE_BYPASS);
+	return ia32_cap;
+}
 
-	if (x86_match_cpu(cpu_no_speculation))
+static bool arch_cap_mmio_immune(u64 ia32_cap)
+{
+	return (ia32_cap & ARCH_CAP_FBSDP_NO &&
+		ia32_cap & ARCH_CAP_PSDP_NO &&
+		ia32_cap & ARCH_CAP_SBDR_SSDP_NO);
+}
+
+static void __init cpu_set_bug_bits(struct cpuinfo_x86 *c)
+{
+	u64 ia32_cap = x86_read_arch_cap_msr();
+
+	if (cpu_matches(NO_SPECULATION))
 		return;
 
 	setup_force_cpu_bug(X86_BUG_SPECTRE_V1);
 	setup_force_cpu_bug(X86_BUG_SPECTRE_V2);
 
-	if (x86_match_cpu(cpu_no_meltdown))
+	if (!cpu_matches(NO_SSB) && !(ia32_cap & ARCH_CAP_SSB_NO) &&
+	   !cpu_has(c, X86_FEATURE_AMD_SSB_NO))
+		setup_force_cpu_bug(X86_BUG_SPEC_STORE_BYPASS);
+
+	if (ia32_cap & ARCH_CAP_IBRS_ALL)
+		setup_force_cpu_cap(X86_FEATURE_IBRS_ENHANCED);
+
+	if (!cpu_matches(cpu_vuln_whitelist, NO_MDS) &&
+	    !(ia32_cap & ARCH_CAP_MDS_NO)) {
+		setup_force_cpu_bug(X86_BUG_MDS);
+		if (cpu_matches(cpu_vuln_whitelist, MSBDS_ONLY))
+			setup_force_cpu_bug(X86_BUG_MSBDS_ONLY);
+	}
+
+	if (!cpu_matches(cpu_vuln_whitelist, NO_SWAPGS))
+		setup_force_cpu_bug(X86_BUG_SWAPGS);
+
+	/*
+	 * When the CPU is not mitigated for TAA (TAA_NO=0) set TAA bug when:
+	 *	- TSX is supported or
+	 *	- TSX_CTRL is present
+	 *
+	 * TSX_CTRL check is needed for cases when TSX could be disabled before
+	 * the kernel boot e.g. kexec.
+	 * TSX_CTRL check alone is not sufficient for cases when the microcode
+	 * update is not present or running as guest that don't get TSX_CTRL.
+	 */
+	if (!(ia32_cap & ARCH_CAP_TAA_NO) &&
+	    (cpu_has(c, X86_FEATURE_RTM) ||
+	     (ia32_cap & ARCH_CAP_TSX_CTRL_MSR)))
+		setup_force_cpu_bug(X86_BUG_TAA);
+
+	/*
+	 * SRBDS affects CPUs which support RDRAND or RDSEED and are listed
+	 * in the vulnerability blacklist.
+	 *
+	 * Some of the implications and mitigation of Shared Buffers Data
+	 * Sampling (SBDS) are similar to SRBDS. Give SBDS same treatment as
+	 * SRBDS.
+	 */
+	if ((cpu_has(c, X86_FEATURE_RDRAND) ||
+	     cpu_has(c, X86_FEATURE_RDSEED)) &&
+	    cpu_matches(cpu_vuln_blacklist, SRBDS | MMIO_SBDS))
+		    setup_force_cpu_bug(X86_BUG_SRBDS);
+
+	/*
+	 * Processor MMIO Stale Data bug enumeration
+	 *
+	 * Affected CPU list is generally enough to enumerate the vulnerability,
+	 * but for virtualization case check for ARCH_CAP MSR bits also, VMM may
+	 * not want the guest to enumerate the bug.
+	 */
+	if (cpu_matches(cpu_vuln_blacklist, MMIO) &&
+	    !arch_cap_mmio_immune(ia32_cap))
+		setup_force_cpu_bug(X86_BUG_MMIO_STALE_DATA);
+
+	if (cpu_matches(cpu_vuln_whitelist, NO_MELTDOWN))
 		return;
 
 	/* Rogue Data Cache Load? No! */
@@ -950,6 +1084,11 @@ static void __init cpu_set_bug_bits(struct cpuinfo_x86 *c)
 		return;
 
 	setup_force_cpu_bug(X86_BUG_CPU_MELTDOWN);
+
+	if (cpu_matches(NO_L1TF))
+		return;
+
+	setup_force_cpu_bug(X86_BUG_L1TF);
 }
 
 /*
@@ -1355,6 +1494,8 @@ void __init identify_boot_cpu(void)
 	enable_sep_cpu();
 #endif
 	cpu_detect_tlb(&boot_cpu_data);
+
+	tsx_init();
 }
 
 void identify_secondary_cpu(struct cpuinfo_x86 *c)

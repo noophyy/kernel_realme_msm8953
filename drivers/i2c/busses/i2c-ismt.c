@@ -495,6 +495,9 @@ static int ismt_access(struct i2c_adapter *adap, u16 addr,
 		if (read_write == I2C_SMBUS_WRITE) {
 			/* Block Write */
 			dev_dbg(dev, "I2C_SMBUS_BLOCK_DATA:  WRITE\n");
+			if (data->block[0] < 1 || data->block[0] > I2C_SMBUS_BLOCK_MAX)
+				return -EINVAL;
+
 			dma_size = data->block[0] + 1;
 			dma_direction = DMA_TO_DEVICE;
 			desc->wr_len_cmd = dma_size;
@@ -589,7 +592,7 @@ static int ismt_access(struct i2c_adapter *adap, u16 addr,
 
 	/* unmap the data buffer */
 	if (dma_size != 0)
-		dma_unmap_single(&adap->dev, dma_addr, dma_size, dma_direction);
+		dma_unmap_single(dev, dma_addr, dma_size, dma_direction);
 
 	if (unlikely(!time_left)) {
 		dev_err(dev, "completion wait timed out\n");

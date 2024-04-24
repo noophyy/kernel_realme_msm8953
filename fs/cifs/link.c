@@ -119,6 +119,9 @@ parse_mf_symlink(const u8 *buf, unsigned int buf_len, unsigned int *_link_len,
 	if (rc != 1)
 		return -EINVAL;
 
+	if (link_len > CIFS_MF_SYMLINK_LINK_MAXLEN)
+		return -EINVAL;
+
 	rc = symlink_hash(link_len, link_str, md5_hash);
 	if (rc) {
 		cifs_dbg(FYI, "%s: MD5 hash failure: %d\n", __func__, rc);
@@ -419,7 +422,7 @@ smb3_query_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
 	struct cifs_io_parms io_parms;
 	int buf_type = CIFS_NO_BUFFER;
 	__le16 *utf16_path;
-	__u8 oplock = SMB2_OPLOCK_LEVEL_II;
+	__u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
 	struct smb2_file_all_info *pfile_info = NULL;
 
 	oparms.tcon = tcon;
@@ -481,7 +484,7 @@ smb3_create_mf_symlink(unsigned int xid, struct cifs_tcon *tcon,
 	struct cifs_io_parms io_parms;
 	int create_options = CREATE_NOT_DIR;
 	__le16 *utf16_path;
-	__u8 oplock = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
+	__u8 oplock = SMB2_OPLOCK_LEVEL_NONE;
 	struct kvec iov[2];
 
 	if (backup_cred(cifs_sb))
