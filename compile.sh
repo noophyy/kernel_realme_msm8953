@@ -32,6 +32,10 @@ echo  $P
 
 DEFCONFIG="mikasa_defconfig"
 
+TC_DIR="/workspace/zyc-19"
+
+export PATH="$TC_DIR/bin:$PATH"
+
 # you can set you name or host name(optional)
 
 export KBUILD_BUILD_USER=Nop
@@ -40,7 +44,7 @@ export KBUILD_BUILD_HOST=Notedphy
 mkdir -p out
 make O=out ARCH=arm64 $DEFCONFIG
 
-make -j$(nproc --all) O=out ARCH=arm64  CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee log.txt
+make -j$(nproc --all) O=out ARCH=arm64 CC=clang  CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee log.txt
 
 if [ -f out/arch/arm64/boot/Image.gz ] ; then
     echo -e "$cyan===========================\033[0m"
