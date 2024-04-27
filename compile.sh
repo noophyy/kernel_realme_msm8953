@@ -32,7 +32,7 @@ echo  $P
 
 DEFCONFIG="mikasa_defconfig"
 
-TC_DIR="/workspace/zyc-19"
+TC_DIR="/workspace/clang-18"
 
 export PATH="$TC_DIR/bin:$PATH"
 
