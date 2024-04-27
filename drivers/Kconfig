@@ -214,5 +214,4 @@ source "drivers/tee/Kconfig"
 source "drivers/qihoo/Kconfig"
 #endif /* VENDOR_EDIT */
 
-source "drivers/kernelsu/Kconfig"
 endmenu
