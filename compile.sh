@@ -30,7 +30,7 @@ echo  $P
 
 # change DEFCONFIG to you are defconfig name or device codename
 
-DEFCONFIG="mikasa_defconfig"
+DEFCONFIG="mikasanh_defconfig"
 
 TC_DIR="/workspace/clang-18"
 
