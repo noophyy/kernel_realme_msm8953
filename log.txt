@@ -1,0 +1,276 @@
+make[1]: Entering directory '/workspace/mikasa/out'
+@@@@@@@@@@@ 111 OPPO_BUILD_CUSTOMIZE is 
+@@@@@@@@@@@ 111 OPPO_BUILD_CUSTOMIZE is 
+  GEN     ./Makefile
+scripts/kconfig/conf  --silentoldconfig Kconfig
+drivers/input/oppo_fp_drivers/fpc1020/Kconfig:15:warning: ignoring unsupported character ''
+drivers/input/oppo_fp_drivers/fpc1020/Kconfig:16:warning: ignoring unsupported character ''
+drivers/input/oppo_fp_drivers/fpc1020/Kconfig:17:warning: ignoring unsupported character ''
+drivers/input/oppo_fp_drivers/fpc1020/Kconfig:18:warning: ignoring unsupported character ''
+drivers/input/touchscreen/himax_hx83102d/Kconfig:41:warning: ignoring type redefinition of 'TOUCHSCREEN_HIMAX_DEBUG' from 'tristate' to 'boolean'
+drivers/input/oppo_fp_drivers/Kconfig:15:warning: multi-line strings not supported
+@@@@@@@@@@@ 111 OPPO_BUILD_CUSTOMIZE is 
+  CHK     include/config/kernel.release
+  GEN     ./Makefile
+  UPD     include/config/kernel.release
+  CHK     include/generated/uapi/linux/version.h
+  Using .. as source for kernel
+  CHK     include/generated/utsrelease.h
+  UPD     include/generated/utsrelease.h
+  CHK     scripts/mod/devicetable-offsets.h
+  CHK     include/generated/timeconst.h
+  CHK     include/generated/bounds.h
+  CHK     include/generated/asm-offsets.h
+  CALL    ../scripts/checksyscalls.sh
+  CHK     include/generated/compile.h
+  CC      init/version.o
+  CC      kernel/sys.o
+  LD      init/built-in.o
+  DTC     arch/arm64/boot/dts/qcom/msm8953.dtb
+In file included from ../arch/arm64/boot/dts/qcom/msm8953.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+  CC      drivers/base/firmware_class.o
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/sdm450.dtb
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/apq8053.dtb
+  DTC     arch/arm64/boot/dts/qcom/sda450.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi8940.dtb
+In file included from ../arch/arm64/boot/dts/qcom/apq8053.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/apq8053.dtsi:13:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+In file included from ../arch/arm64/boot/dts/qcom/sda450.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sda450.dtsi:14:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi8940.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi8937.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi8940.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi8937.dtb
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi8937.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi632.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm632.dtb
+In file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi8937.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+  DTC     arch/arm64/boot/dts/qcom/sdm632-pm8004.dtb
+1 warning generated.
+In file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi8940.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/sdm632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm632.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: 1 warning generated.
+warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+In file included from ../arch/arm64/boot/dts/qcom/sdm632-pm8004.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm632.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi632.dtb
+  DTC     arch/arm64/boot/dts/qcom/sda450-pmi632.dtb
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi632.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/sda450-pmi632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sda450.dtsi:14:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi  DTC     arch/arm64/boot/dts/qcom/msm8953-cdp-1200p-overlay.dtbo
+:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/msm8953-ext-codec-rcm-overlay.dtbo
+  LD      drivers/base/built-in.o
+  DTC     arch/arm64/boot/dts/qcom/msm8953-iot-mtp-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/msm8953-ipc-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/msm8953-qrd-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/msm8953-rcm-overlay.dtbo
+  CC      kernel/irq/sbalance.o
+  DTC     arch/arm64/boot/dts/qcom/msm8953-cdp-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/msm8953-ext-codec-mtp-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/msm8953-mtp-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm632-rumi-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm450-qrd-sku4-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm632-ext-codec-cdp-s3-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm632-ext-codec-mtp-s4-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm632-qrd-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm632-rcm-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm450-cdp-s2-overlay.dtbo
+  DTC     arch/arm64/boot/dts/qcom/sdm450-mtp-s3-overlay.dtbo
+  CC      kernel/trace/trace.o
+  CC      kernel/module.o
+  LD      kernel/irq/built-in.o
+  CHK     kernel/config_data.h
+  LD      kernel/trace/built-in.o
+  LD      kernel/built-in.o
+  LD      drivers/built-in.o
+  GEN     .version
+  LD      vmlinux.o
+  MODPOST vmlinux.o
+WARNING: modpost: Found 6 section mismatch(es).
+To see full details build your kernel with:
+'make CONFIG_DEBUG_SECTION_MISMATCH=y'
+  CHK     include/generated/compile.h
+  UPD     include/generated/compile.h
+  CC      init/version.o
+  LD      init/built-in.o
+  KSYM    .tmp_kallsyms1.o
+  KSYM    .tmp_kallsyms2.o
+  LD      vmlinux
+  SORTEX  vmlinux
+  SYSMAP  System.map
+  OBJCOPY arch/arm64/boot/Image
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi8937.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm632.dtb
+  DTC     arch/arm64/boot/dts/qcom/apq8016-sbc.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8916-mtp.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8996-mtp.dtb
+  DTC     arch/arm64/boot/dts/qcom/apq8096-db820c.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8953.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm450.dtb
+  DTC     arch/arm64/boot/dts/qcom/apq8053.dtb
+  DTC     arch/arm64/boot/dts/qcom/sda450.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi8940.dtb
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi8937.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi8940.dtb
+  DTC     arch/arm64/boot/dts/qcom/sdm450-pmi632.dtb
+  Building modules, stage 2.
+In file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi8937.dts:16:
+In file included from In file included from ../arch/arm64/boot/dts/qcom/sdm632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm632.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/msm8953.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_In file included from ../arch/arm64/boot/dts/qcom/apq8053.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/apq8053.dtsi:13:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+E DIT */
+      |                         ^
+1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi8940.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warningIn file included from  generated.
+../arch/arm64/boot/dts/qcom/sda450.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sda450.dtsi:14:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi8937.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+  DTC     arch/arm64/boot/dts/qcom/msm8953-pmi632.dtb
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsIn file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi8940.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:11501:25: warning: '/*' within block comment [-Wcomment]
+ warning generated.
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+  DTC     arch/arm64/boot/dts/qcom/sda450-pmi632.dtb
+1 warning generated.
+1 warning generated.
+In file included from ../arch/arm64/boot/dts/qcom/sdm450-pmi632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+  DTC     arch/arm64/boot/dts/qcom/sdm632-pm8004.dtb
+1 warning generated.
+  MODPOST 9 modules
+In file included from ../arch/arm64/boot/dts/qcom/msm8953-pmi632.dts:16:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+In file included from ../arch/arm64/boot/dts/qcom/sdm632-pm8004.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sdm632.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |        In file included from ../arch/arm64/boot/dts/qcom/sda450-pmi632.dts:16:
+In file included from ../arch/arm64/boot/dts/qcom/sda450.dtsi:14:
+In file included from ../arch/arm64/boot/dts/qcom/sdm450.dtsi:14:
+../arch/arm64/boot/dts/qcom/msm8953.dtsi:1501:25: warning: '/*' within block comment [-Wcomment]
+ 1501 |                 /*endif /* VENDOR_EDIT */
+      |                         ^
+     1 warning generated.
+    /*endif /* VENDOR_EDIT */
+      |                         ^
+1 warning generated.
+1 warning generated.
+  GZIP    arch/arm64/boot/Image.gz
+  CC      drivers/char/rdbg.mod.o
+  CC      drivers/media/platform/msm/dvb/adapter/mpq-adapter.mod.o
+  CC      drivers/media/platform/msm/dvb/demux/mpq-dmx-hw-plugin.mod.o
+  CC      drivers/net/imq.mod.o
+  CC      drivers/staging/prima/wlan.mod.o
+  CC      drivers/video/backlight/lcd.mod.o
+  CC      fs/efivarfs/efivarfs.mod.o
+  CC      net/bridge/br_netfilter.mod.o
+  CC      net/netfilter/xt_IMQ.mod.o
+  LD [M]  drivers/char/rdbg.ko
+  LD [M]  drivers/media/platform/msm/dvb/adapter/mpq-adapter.ko
+  LD [M]  fs/efivarfs/efivarfs.ko
+  LD [M]  drivers/staging/prima/wlan.ko
+  LD [M]  drivers/net/imq.ko
+  LD [M]  drivers/video/backlight/lcd.ko
+  LD [M]  drivers/media/platform/msm/dvb/demux/mpq-dmx-hw-plugin.ko
+  LD [M]  net/netfilter/xt_IMQ.ko
+  LD [M]  net/bridge/br_netfilter.ko
+  CAT     arch/arm64/boot/Image.gz-dtb
+make[1]: Leaving directory '/workspace/mikasa/out'

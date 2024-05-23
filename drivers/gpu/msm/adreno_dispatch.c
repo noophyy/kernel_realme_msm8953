@@ -551,6 +551,7 @@ static void  dispatcher_queue_context(struct adreno_device *adreno_dev,
  */
 static int sendcmd(struct adreno_device *adreno_dev,
 	struct kgsl_drawobj_cmd *cmdobj)
+
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_drawobj *drawobj = DRAWOBJ(cmdobj);
@@ -659,14 +660,13 @@ static int sendcmd(struct adreno_device *adreno_dev,
 
 	secs = time.ktime;
 	nsecs = do_div(secs, 1000000000);
-
+/*
 	trace_adreno_cmdbatch_submitted(drawobj, (int) dispatcher->inflight,
+*/
 		time.ticks, (unsigned long) secs, nsecs / 1000, drawctxt->rb,
-		adreno_get_rptr(drawctxt->rb));
+
 
 	mutex_unlock(&device->mutex);
-
-	cmdobj->submit_ticks = time.ticks;
 
 	dispatch_q->cmd_q[dispatch_q->tail] = cmdobj;
 	dispatch_q->tail = (dispatch_q->tail + 1) %
@@ -2334,12 +2334,6 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 			(int) dispatcher->inflight, start, end,
 			ADRENO_DRAWOBJ_RB(drawobj),
 			adreno_get_rptr(drawctxt->rb), cmdobj->fault_recovery);
-
-	drawctxt->submit_retire_ticks[drawctxt->ticks_index] =
-		end - cmdobj->submit_ticks;
-
-	drawctxt->ticks_index = (drawctxt->ticks_index + 1) %
-		SUBMIT_RETIRE_TICKS_SIZE;
 
 	kgsl_drawobj_destroy(drawobj);
 }

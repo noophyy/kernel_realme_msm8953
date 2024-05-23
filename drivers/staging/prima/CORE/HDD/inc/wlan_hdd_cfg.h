@@ -3262,7 +3262,6 @@ This feature requires the dependent cfg.ini "gRoamPrefer5GHz" set to 1 */
  *
  * </ini>
  */
-#define CFG_ENABLE_DEFAULT_SAP           "gEnabledefaultSAP"
 #define CFG_ENABLE_DEFAULT_SAP_DEFAULT   ""
 
 /*
@@ -3938,7 +3937,6 @@ typedef struct
    uint32_t                    btc_dyn_num_bt_ext;
    bool                        indoor_channel_support;
    bool                        force_rsne_override;
-   char enabledefaultSAP[CFG_CONCURRENT_IFACE_MAX_LEN];
 #ifdef WLAN_FEATURE_SAE
    bool                        is_sae_enabled;
    bool                        enable_sae_for_sap;

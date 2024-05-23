@@ -1875,8 +1875,6 @@ static size_t ZSTD_resetCCtx_internal(ZSTD_CCtx* zc,
         DEBUGLOG(4, "pledged content size : %u ; flag : %u",
             (unsigned)pledgedSrcSize, zc->appliedParams.fParams.contentSizeFlag);
         zc->blockSize = blockSize;
-
-        xxh64_reset(&zc->xxhState, 0);
         zc->stage = ZSTDcs_init;
         zc->dictID = 0;
         zc->dictContentSize = 0;
@@ -3916,7 +3914,6 @@ static size_t ZSTD_compress_frameChunk(ZSTD_CCtx* cctx,
 
     DEBUGLOG(4, "ZSTD_compress_frameChunk (blockSize=%u)", (unsigned)blockSize);
     if (cctx->appliedParams.fParams.checksumFlag && srcSize)
-        xxh64_update(&cctx->xxhState, src, srcSize);
 
     while (remaining) {
         ZSTD_matchState_t* const ms = &cctx->blockState.matchState;
@@ -4603,7 +4600,7 @@ static size_t ZSTD_writeEpilogue(ZSTD_CCtx* cctx, void* dst, size_t dstCapacity)
     }
 
     if (cctx->appliedParams.fParams.checksumFlag) {
-        U32 const checksum = (U32) xxh64_digest(&cctx->xxhState);
+        U32 const checksum = (U32) 
         RETURN_ERROR_IF(dstCapacity<4, dstSize_tooSmall, "no room for checksum");
         DEBUGLOG(4, "ZSTD_writeEpilogue: write checksum : %08X", (unsigned)checksum);
         MEM_writeLE32(op, checksum);
@@ -6119,7 +6116,6 @@ size_t ZSTD_compressSequences(ZSTD_CCtx* cctx,
     dstCapacity -= frameHeaderSize;
     cSize += frameHeaderSize;
     if (cctx->appliedParams.fParams.checksumFlag && srcSize) {
-        xxh64_update(&cctx->xxhState, src, srcSize);
     }
     /* cSize includes block header size and compressed sequences size */
     compressedBlocksSize = ZSTD_compressSequences_internal(cctx,
@@ -6131,7 +6127,7 @@ size_t ZSTD_compressSequences(ZSTD_CCtx* cctx,
     dstCapacity -= compressedBlocksSize;
 
     if (cctx->appliedParams.fParams.checksumFlag) {
-        U32 const checksum = (U32) xxh64_digest(&cctx->xxhState);
+        U32 const checksum = (U32) 
         RETURN_ERROR_IF(dstCapacity<4, dstSize_tooSmall, "no room for checksum");
         DEBUGLOG(4, "Write checksum : %08X", (unsigned)checksum);
         MEM_writeLE32((char*)dst + cSize, checksum);
